@@ -169,17 +169,27 @@ def train(persist: bool = True) -> int:
             "market": MARKET, "version": VERSION, "train_seasons": [int(s) for s in seasons],
             "valid_seasons": [valid_s], "test_seasons": [int(s) for s in test_s],
             "metrics": metrics, "feature_names": names, "artifact_path": str(path)})
+        with open(path, "rb") as f, db.conn() as c:
+            from sqlalchemy import text
+            c.execute(text("UPDATE model_runs SET artifact=:b WHERE id=:id"), {"b": f.read(), "id": run_id})
         write_model_md(metrics, names, run_id)
         print(f"[train] saved model_run {run_id} → {path}")
     return run_id
 
 
 def load_latest() -> tuple[PassingYardsModel, int]:
-    r = db.read_sql("SELECT id, artifact_path FROM model_runs WHERE market=:m ORDER BY id DESC LIMIT 1", {"m": MARKET})
+    r = db.read_sql("SELECT id, artifact_path, artifact FROM model_runs WHERE market=:m ORDER BY id DESC LIMIT 1", {"m": MARKET})
     if r.empty:
         raise RuntimeError("no trained model; run `python -m nfl_edge train`")
-    with open(r.artifact_path.iloc[0], "rb") as f:
-        return pickle.load(f), int(r.id.iloc[0])
+    import os
+    path = r.artifact_path.iloc[0]
+    if path and os.path.exists(path):
+        with open(path, "rb") as f:
+            return pickle.load(f), int(r.id.iloc[0])
+    blob = r.artifact.iloc[0]
+    if blob is None:
+        raise RuntimeError("model artifact missing on disk and in DB; run `python -m nfl_edge train`")
+    return pickle.loads(bytes(blob)), int(r.id.iloc[0])
 
 
 def write_model_md(metrics: dict, names: list[str], run_id: int):

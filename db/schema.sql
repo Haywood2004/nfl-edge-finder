@@ -372,8 +372,10 @@ CREATE TABLE IF NOT EXISTS model_runs (
   test_seasons  int[],
   metrics      jsonb NOT NULL,
   feature_names text[],
-  artifact_path text
+  artifact_path text,
+  artifact      bytea             -- pickled model, so stateless runners (GitHub Actions) can load it
 );
+ALTER TABLE model_runs ADD COLUMN IF NOT EXISTS artifact bytea;
 
 CREATE TABLE IF NOT EXISTS projections (
   id           bigserial PRIMARY KEY,

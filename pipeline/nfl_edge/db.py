@@ -52,6 +52,30 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_TYPE_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _column_types(table: str) -> dict[str, str]:
+    if table not in _TYPE_CACHE:
+        r = read_sql("SELECT column_name, data_type FROM information_schema.columns WHERE table_name=:t", {"t": table})
+        _TYPE_CACHE[table] = dict(zip(r.column_name, r.data_type))
+    return _TYPE_CACHE[table]
+
+
+def _coerce_types(df: pd.DataFrame, table: str) -> pd.DataFrame:
+    """COPY is strict: '20.0' is not an integer and 'True' is not a bool literal for text CSV.
+    Cast columns to the target table's declared types so pandas floats/objects serialize cleanly."""
+    types = _column_types(table)
+    df = df.copy()
+    for c in df.columns:
+        t = types.get(c)
+        if t in ("integer", "bigint", "smallint"):
+            df[c] = pd.to_numeric(df[c], errors="coerce").round().astype("Int64")
+        elif t == "boolean":
+            df[c] = df[c].map(lambda v: None if v is None or (isinstance(v, float) and pd.isna(v)) else bool(v))
+    return df
+
+
 def upsert(df: pd.DataFrame, table: str, keys: Iterable[str], chunk: int = 50000,
            update: bool = True) -> int:
     """Idempotent bulk upsert: COPY into a temp table, then INSERT ... ON CONFLICT (keys).
@@ -61,7 +85,7 @@ def upsert(df: pd.DataFrame, table: str, keys: Iterable[str], chunk: int = 50000
     """
     if df.empty:
         return 0
-    df = _clean(df)
+    df = _coerce_types(_clean(df), table)
     cols = list(df.columns)
     keys = list(keys)
     non_keys = [c for c in cols if c not in keys]
