@@ -68,7 +68,10 @@ def main(argv=None):
         ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
         from .features.build import build_features
         from .models.passing_yards import train
+        from .scoring.cards import score_week
         build_features(); train()
+        ingest.ingest_odds("tue_open", tuple(a.markets)); ingest.ingest_weather()
+        score_week()
     else:
         print(f"unknown job {a.job}", file=sys.stderr); return 2
     return 0

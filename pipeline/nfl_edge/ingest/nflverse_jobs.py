@@ -156,6 +156,9 @@ def ingest_depth_charts(seasons: list[int] | None = None) -> int:
                 print(f"[depth] {e}")
                 continue
             d = d[["dt", "team", "player_name", "gsis_id", "pos_grp", "pos_abb", "pos_slot", "pos_rank"]].copy()
+            # keep offensive skill spots only (the matchup layer uses QB/RB/WR/TE); cuts ~80% of rows
+            d = d[d.pos_abb.isin(["QB", "RB", "WR", "TE", "FB", "LWR", "RWR", "SWR"]) |
+                  d.pos_grp.str.contains("Offense", na=False) & d.pos_abb.isin(["QB", "RB", "WR", "TE"])]
             d["season"] = s
             d["dt"] = pd.to_datetime(d["dt"], utc=True)
             d["team"] = d["team"].map(norm)

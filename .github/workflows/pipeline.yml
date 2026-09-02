@@ -41,6 +41,8 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -e ./pipeline
+      - name: Apply schema (idempotent)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f db/schema.sql
       - name: Resolve job from schedule
         id: job
         run: |

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import io
 import json
 from contextlib import contextmanager
 from typing import Iterable
@@ -51,30 +52,41 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def upsert(df: pd.DataFrame, table: str, keys: Iterable[str], chunk: int = 5000,
+def upsert(df: pd.DataFrame, table: str, keys: Iterable[str], chunk: int = 50000,
            update: bool = True) -> int:
-    """Idempotent INSERT ... ON CONFLICT (keys) DO UPDATE / NOTHING. Returns rows sent."""
+    """Idempotent bulk upsert: COPY into a temp table, then INSERT ... ON CONFLICT (keys).
+
+    One COPY + one INSERT per chunk instead of one round trip per row, which matters when the
+    database is remote (Neon) — 450k plays load in ~1 minute instead of hours.
+    """
     if df.empty:
         return 0
     df = _clean(df)
     cols = list(df.columns)
     keys = list(keys)
-    col_sql = ", ".join(cols)
-    val_sql = ", ".join(f":{c}" for c in cols)
     non_keys = [c for c in cols if c not in keys]
-    if update and non_keys:
-        set_sql = ", ".join(f"{c} = EXCLUDED.{c}" for c in non_keys)
-        action = f"DO UPDATE SET {set_sql}"
-    else:
-        action = "DO NOTHING"
-    sql = text(f"INSERT INTO {table} ({col_sql}) VALUES ({val_sql}) "
-               f"ON CONFLICT ({', '.join(keys)}) {action}")
+    action = (f"DO UPDATE SET " + ", ".join(f"{c} = EXCLUDED.{c}" for c in non_keys)) if (update and non_keys) else "DO NOTHING"
+    col_sql = ", ".join(cols)
     n = 0
-    with conn() as c:
+    raw = engine().raw_connection()
+    try:
+        cur = raw.cursor()
+        tmp = f"_tmp_{table}"
+        cur.execute(f"CREATE TEMP TABLE {tmp} (LIKE {table} INCLUDING DEFAULTS) ON COMMIT DROP")
         for i in range(0, len(df), chunk):
-            rows = df.iloc[i:i + chunk].to_dict("records")
-            c.execute(sql, rows)
-            n += len(rows)
+            buf = io.StringIO()
+            df.iloc[i:i + chunk].to_csv(buf, index=False, header=False, na_rep="\\N")
+            buf.seek(0)
+            cur.copy_expert(f"COPY {tmp} ({col_sql}) FROM STDIN WITH (FORMAT csv, NULL '\\N')", buf)
+            n += min(chunk, len(df) - i)
+        cur.execute(f"INSERT INTO {table} ({col_sql}) SELECT {col_sql} FROM {tmp} "
+                    f"ON CONFLICT ({', '.join(keys)}) {action}")
+        raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        raw.close()
     return n
 
 
