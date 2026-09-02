@@ -1,6 +1,8 @@
 """python -m nfl_edge <job> [options]"""
 from __future__ import annotations
 import argparse
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 import sys
 
 

@@ -71,8 +71,9 @@ def score_week(week: int | None = None) -> int:
                                   FROM raw_injuries WHERE season=:s AND week=:w ORDER BY gsis_id, observed_at DESC""",
                                {"s": season, "w": wk})
         inj_by_id = injuries.set_index("gsis_id").to_dict("index") if len(injuries) else {}
-        weather = db.read_sql("""SELECT DISTINCT ON (game_id) game_id, wind_mph, temp_f, precip_prob, is_dome
-                                 FROM raw_weather ORDER BY game_id, fetched_at DESC""").set_index("game_id").to_dict("index")
+        wdf = db.read_sql("""SELECT DISTINCT ON (game_id) game_id, wind_mph, temp_f, precip_prob, is_dome
+                             FROM raw_weather ORDER BY game_id, fetched_at DESC""").set_index("game_id")
+        weather = {g: {k: (None if pd.isna(v) else v) for k, v in row.items()} for g, row in wdf.to_dict("index").items()}
         injury_data_available = bool(len(injuries))
 
         proj_rows, card_rows = [], []

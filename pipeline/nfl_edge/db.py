@@ -48,8 +48,25 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in df.columns:
         if df[col].map(_is_json).any():
-            df[col] = df[col].map(lambda v: json.dumps(v) if _is_json(v) else v)
+            df[col] = df[col].map(lambda v: json.dumps(_nan_to_none(v)) if _is_json(v) else v)
     return df
+
+
+def _nan_to_none(v):
+    """Postgres jsonb rejects NaN/Infinity tokens; recursively replace them with null."""
+    if isinstance(v, dict):
+        return {k: _nan_to_none(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_nan_to_none(x) for x in v]
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        return None
+    try:
+        import numpy as np
+        if isinstance(v, np.generic):
+            return _nan_to_none(v.item())
+    except ImportError:
+        pass
+    return v
 
 
 _TYPE_CACHE: dict[str, dict[str, str]] = {}
