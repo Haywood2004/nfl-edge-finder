@@ -10,6 +10,11 @@ matchup-aware projection model. Every flagged card explains *why* in verifiable 
 /docs       DECISIONS.md, TODO.md, MODEL.md, DATA_SOURCES.md
 ```
 
+## Live
+
+- App: https://nfl-edge-finder.vercel.app (Vercel, root dir `web`)
+- Pipeline: GitHub Actions cron in `.github/workflows/pipeline.yml` → Neon Postgres
+
 ## Quick start
 
 ```bash
