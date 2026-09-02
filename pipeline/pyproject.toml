@@ -1,0 +1,24 @@
+[project]
+name = "nfl_edge"
+version = "0.1.0"
+description = "NFL Edge Finder data pipeline: ingest, features, models, scoring, grading"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=1.5,<3",
+  "numpy",
+  "pyarrow",
+  "requests",
+  "sqlalchemy>=2",
+  "psycopg2-binary",
+  "python-dotenv",
+  "lightgbm>=4",
+  "scikit-learn",
+  "scipy",
+  "statsmodels",
+]
+[project.optional-dependencies]
+dev = ["pytest"]
+[tool.setuptools.packages.find]
+include = ["nfl_edge*"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]

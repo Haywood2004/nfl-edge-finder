@@ -1,0 +1,11 @@
+.env
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.pytest_cache/
+pipeline/.cache/
+pipeline/artifacts/*.pkl
+pipeline/artifacts/*.txt
+
+pipeline/.cache/

@@ -1,0 +1,83 @@
+"""python -m nfl_edge <job> [options]"""
+from __future__ import annotations
+import argparse
+import sys
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="nfl_edge")
+    p.add_argument("job")
+    p.add_argument("--seasons", type=int, nargs="*")
+    p.add_argument("--week", type=int)
+    p.add_argument("--label", default="manual")
+    p.add_argument("--from-dir", help="replay recorded Odds API payloads from this directory")
+    p.add_argument("--markets", nargs="*", default=["player_pass_yds"])
+    p.add_argument("--max-events", type=int)
+    a = p.parse_args(argv)
+
+    from . import ingest
+    if a.job == "ingest_schedule":
+        ingest.ingest_schedule(a.seasons)
+    elif a.job == "ingest_pbp":
+        ingest.ingest_pbp(a.seasons)
+    elif a.job == "ingest_weekly_stats":
+        ingest.ingest_weekly_stats(a.seasons)
+    elif a.job == "ingest_injuries":
+        ingest.ingest_injuries(a.seasons)
+    elif a.job == "ingest_depth_charts":
+        ingest.ingest_depth_charts(a.seasons)
+    elif a.job == "ingest_rosters":
+        ingest.ingest_rosters(a.seasons)
+    elif a.job == "ingest_snaps":
+        ingest.ingest_snaps(a.seasons)
+    elif a.job == "ingest_weather":
+        ingest.ingest_weather(a.week)
+    elif a.job in ("ingest_odds", "snapshot"):
+        ingest.ingest_odds(a.label, tuple(a.markets), week=a.week, from_dir=a.from_dir, max_events=a.max_events)
+    elif a.job == "build_features":
+        from .features.build import build_features
+        build_features(a.seasons, a.week)
+    elif a.job == "train":
+        from .models.passing_yards import train
+        train()
+    elif a.job == "score":
+        from .scoring.cards import score_week
+        score_week(a.week)
+    elif a.job == "grade":
+        from .grading.grade import grade_cards
+        grade_cards()
+    elif a.job == "ingest_nflverse":
+        ingest.ingest_schedule(); ingest.ingest_pbp(a.seasons); ingest.ingest_weekly_stats(a.seasons)
+        ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
+    elif a.job == "weekly":       # Tuesday: refresh data, snapshot open, features, score
+        ingest.ingest_schedule(); ingest.ingest_pbp([_cur()]); ingest.ingest_weekly_stats([_cur()])
+        ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
+        ingest.ingest_odds("tue_open", tuple(a.markets))
+        ingest.ingest_weather()
+        from .features.build import build_features
+        from .scoring.cards import score_week
+        build_features(); score_week()
+    elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
+        ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_weather()
+        ingest.ingest_odds("sun_am", tuple(a.markets))
+        from .features.build import build_features
+        from .scoring.cards import score_week
+        build_features(); score_week()
+    elif a.job == "bootstrap":    # first run from scratch
+        ingest.ingest_schedule(); ingest.ingest_pbp(); ingest.ingest_weekly_stats()
+        ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
+        from .features.build import build_features
+        from .models.passing_yards import train
+        build_features(); train()
+    else:
+        print(f"unknown job {a.job}", file=sys.stderr); return 2
+    return 0
+
+
+def _cur():
+    from .ingest.nflverse_jobs import current_season
+    return current_season()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

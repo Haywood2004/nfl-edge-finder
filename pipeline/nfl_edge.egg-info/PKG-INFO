@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: nfl_edge
+Version: 0.1.0
+Summary: NFL Edge Finder data pipeline: ingest, features, models, scoring, grading
+Requires-Python: >=3.11
+Requires-Dist: pandas<3,>=1.5
+Requires-Dist: numpy
+Requires-Dist: pyarrow
+Requires-Dist: requests
+Requires-Dist: sqlalchemy>=2
+Requires-Dist: psycopg2-binary
+Requires-Dist: python-dotenv
+Requires-Dist: lightgbm>=4
+Requires-Dist: scikit-learn
+Requires-Dist: scipy
+Requires-Dist: statsmodels
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"

@@ -1,0 +1,59 @@
+name: pipeline
+
+# Odds snapshot schedule from the brief §4.4 (times in UTC; ET = UTC-4 in season):
+#   Tuesday open      Tue 14:00 ET  → 18:00 UTC
+#   Thursday          Thu 14:00 ET  → 18:00 UTC
+#   Saturday night    Sat 22:00 ET  → 02:00 UTC Sun
+#   Sunday 9am ET     Sun 09:00 ET  → 13:00 UTC
+#   Pre-kick (~30m)   Sun 12:30/15:55/19:50 ET, Mon 19:45 ET, Thu 19:45 ET
+#   Game-day poll     Sun every 2h 10:00–22:00 ET
+# nflverse nightly refresh + feature/model/score after Tuesday open; grade Tuesday morning.
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Job to run (see pipeline/nfl_edge/cli.py)"
+        default: "weekly"
+  schedule:
+    - cron: "0 18 * * 2"      # Tue open: ingest nflverse + odds, build features, score
+    - cron: "0 18 * * 4"      # Thu snapshot
+    - cron: "45 23 * * 4"     # Thu pre-kick (TNF 8:15 ET)
+    - cron: "0 2 * * 0"       # Sat night snapshot
+    - cron: "0 13 * * 0"      # Sun 9am ET snapshot + injuries + weather + rescore
+    - cron: "30 16 * * 0"     # Sun pre-kick 1pm ET
+    - cron: "55 19 * * 0"     # Sun pre-kick 4:25 ET
+    - cron: "50 23 * * 0"     # Sun pre-kick SNF
+    - cron: "45 23 * * 1"     # Mon pre-kick MNF
+    - cron: "0 14,16,18,20,22,0 * * 0"  # Sun game-day poll every 2h
+    - cron: "0 11 * * 2"      # Tue morning: grade last week
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ./pipeline
+      - name: Resolve job from schedule
+        id: job
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job=${{ github.event.inputs.job }}" >> $GITHUB_OUTPUT; exit 0; fi
+          case "${{ github.event.schedule }}" in
+            "0 18 * * 2")  echo "job=weekly"               >> $GITHUB_OUTPUT ;;  # ingest all + features + train? no: score
+            "0 11 * * 2")  echo "job=grade"                >> $GITHUB_OUTPUT ;;
+            "0 13 * * 0")  echo "job=gameday_am"           >> $GITHUB_OUTPUT ;;
+            "0 14,16,18,20,22,0 * * 0") echo "job=snapshot --label gameday_poll" >> $GITHUB_OUTPUT ;;
+            "0 18 * * 4")  echo "job=snapshot --label thu"       >> $GITHUB_OUTPUT ;;
+            "0 2 * * 0")   echo "job=snapshot --label sat_night" >> $GITHUB_OUTPUT ;;
+            *)             echo "job=snapshot --label pre_kick"  >> $GITHUB_OUTPUT ;;
+          esac
+      - run: python -m nfl_edge ${{ steps.job.outputs.job }}
+        working-directory: pipeline

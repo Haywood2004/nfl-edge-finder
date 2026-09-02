@@ -1,0 +1,14 @@
+pandas<3,>=1.5
+numpy
+pyarrow
+requests
+sqlalchemy>=2
+psycopg2-binary
+python-dotenv
+lightgbm>=4
+scikit-learn
+scipy
+statsmodels
+
+[dev]
+pytest
