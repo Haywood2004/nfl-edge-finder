@@ -53,7 +53,7 @@ export default async function Home() {
       {/* Games */}
       <section>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold">Games · win probability</h2>
+          <h2 className="text-lg font-semibold">All {games.length} games · win probability</h2>
           <GameLegend />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{games.map((g) => <GameTile key={g.game_id} g={g} />)}</div>
