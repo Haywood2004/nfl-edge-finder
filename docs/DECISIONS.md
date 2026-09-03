@@ -27,3 +27,11 @@ Running log of decisions made while building NFL Edge Finder. Newest at the bott
 12. **Web app reads Postgres through Drizzle's `postgres-js` driver with raw SQL** rather than a full Drizzle schema — the schema of record is `db/schema.sql`, and duplicating 27 tables in TypeScript before the shape settles would just be drift. Typed row shapes live in `web/src/lib/queries.ts`.
 
 13. **Weather via Open-Meteo is best-effort.** Not reachable from the build sandbox; the job runs in Actions. Until a forecast exists, outdoor cards carry a "forecast unavailable" factor and −4 confidence.
+
+14. **Moneyline model is anchored 95% to the sportsbook consensus, and moneyline cards flag price discrepancies, not model opinions.** Validation (2024) chose the anchor by log-loss; the walk-forward backtest against real nflverse closing moneylines (2019–2025) shows the raw Elo/EPA model losing 10–14% ROI at every edge threshold, including ≥15%. Full tables in MODEL.md. So the useful signal on moneylines is cross-venue pricing (e.g. Polymarket vs books), plus CLV over the week.
+
+15. **Polymarket is ingested as bookmaker `polymarket` in the same snapshot as The Odds API** (Gamma API, free). Its prices are mid quotes with no vig, so it is haircut by 1.5¢ when used as a "best price" and marked as such on cards; it also feeds a `polymarket` factor (traders vs books gap).
+
+16. **Publish threshold raised to edge ≥ 15% at the user's request (2026-09-03).** Given the backtests, this bar will rarely be met on moneylines and only occasionally on props; the home page therefore shows the closest-to-the-bar picks and every game's probability track, and the full board keeps everything. Revisit once graded results exist.
+
+17. **Home page redesigned around visuals**: games grid with a home-win-probability track (model / books / Polymarket markers, validated categorical palette), edge meters against the bar, compact prop tiles. Text-heavy card detail remains one click away.

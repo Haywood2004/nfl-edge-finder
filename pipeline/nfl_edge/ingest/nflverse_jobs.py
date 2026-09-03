@@ -21,7 +21,7 @@ def seasons_through_current(first: int = FIRST_TRAIN_SEASON) -> list[int]:
 
 
 # ---------------------------------------------------------------- schedule
-GAME_COLS = ["game_id", "season", "game_type", "week", "gameday", "weekday", "gametime", "away_team", "home_team",
+GAME_COLS = ["game_id", "season", "game_type", "week", "gameday", "weekday", "gametime", "away_team", "home_team", "location",
              "away_score", "home_score", "result", "total", "overtime", "away_rest", "home_rest", "away_moneyline",
              "home_moneyline", "spread_line", "total_line", "div_game", "roof", "surface", "temp", "wind",
              "away_qb_id", "home_qb_id", "away_qb_name", "home_qb_name", "stadium_id", "stadium"]

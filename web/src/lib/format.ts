@@ -8,7 +8,7 @@ export const TEAM_NAMES: Record<string, string> = {
 export const BOOK_NAMES: Record<string, string> = {
   draftkings: "DraftKings", fanduel: "FanDuel", betmgm: "BetMGM", betrivers: "BetRivers", bovada: "Bovada",
   betonlineag: "BetOnline", williamhill_us: "Caesars", pointsbetus: "PointsBet", unibet_us: "Unibet",
-  fanatics: "Fanatics", espnbet: "ESPN BET", ballybet: "Bally Bet", betparx: "betPARX", hardrockbet: "Hard Rock",
+  fanatics: "Fanatics", polymarket: "Polymarket", lowvig: "LowVig", mybookieag: "MyBookie", espnbet: "ESPN BET", ballybet: "Bally Bet", betparx: "betPARX", hardrockbet: "Hard Rock",
 };
 export const MARKET_NAMES: Record<string, string> = {
   player_pass_yds: "Passing Yards", player_reception_yds: "Receiving Yards", player_rush_yds: "Rushing Yards",

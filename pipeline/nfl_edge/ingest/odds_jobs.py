@@ -17,6 +17,7 @@ import pandas as pd
 from .. import db
 from ..sources.odds_api import OddsAPI, load_payload, american, implied
 from ..teams import ODDS_API_TO_ABBR
+from ..sources import polymarket
 from .nflverse_jobs import current_season
 
 
@@ -164,12 +165,48 @@ def ingest_odds(label: str = "manual", prop_markets: tuple[str, ...] = ("player_
                 credits += int(api.last_headers.get("x-requests-last", 0) or 0)
             rows += _lines_from_bookmakers(eid, eo.get("bookmakers", []), snap_id)
 
+        # Polymarket (prediction market) for the same games, same snapshot — graceful on any failure
+        pm_rows, pm_missing = _polymarket_rows(targets, season, wk, snap_id, from_dir)
+        rows += pm_rows
+
         n = db.append(pd.DataFrame(rows), "odds_lines") if rows else 0
         db.execute("UPDATE odds_snapshots SET credits_used=:c WHERE id=:id", {"c": credits, "id": snap_id})
         nc = build_consensus(snap_id)
         run.rows = n
         run.detail = {"snapshot_id": snap_id, "season": season, "week": wk, "consensus_rows": nc,
-                      "credits": credits, "events_missing_props": missing}
+                      "credits": credits, "events_missing_props": missing, "polymarket_rows": len(pm_rows),
+                      "polymarket_missing": pm_missing}
         print(f"[odds] snapshot {snap_id} ({label}) wk{wk}: {n} lines, {nc} consensus rows, {credits} credits"
               + (f", {len(missing)} events without prop payloads" if missing else ""))
         return snap_id
+
+
+def _polymarket_rows(targets: pd.DataFrame, season: int, wk: int, snap_id: int, from_dir) -> tuple[list[dict], list[str]]:
+    """Fetch (or replay from <from_dir>/polymarket/<game_id>.json) Polymarket lines for the target games."""
+    games = db.read_sql("""SELECT game_id, away_team, home_team, kickoff_utc FROM raw_games
+                           WHERE season=:s AND week=:w AND game_type='REG'""", {"s": season, "w": wk})
+    ev_by_game = dict(zip(targets.game_id, targets.event_id))
+    rows, missing = [], []
+    import requests
+    sess = requests.Session()
+    for _, g in games.iterrows():
+        eid = ev_by_game.get(g.game_id)
+        if not eid:
+            continue
+        try:
+            if from_dir:
+                p = from_dir / "polymarket" / f"{g.game_id}.json"
+                if not p.exists():
+                    missing.append(g.game_id); continue
+                ev = load_payload(p)
+            else:
+                ev = polymarket.fetch_event(g.away_team, g.home_team, pd.Timestamp(g.kickoff_utc), sess)
+                if ev is None:
+                    missing.append(g.game_id); continue
+            for r in polymarket.lines_from_event(ev, g.away_team, g.home_team):
+                rows.append({"snapshot_id": snap_id, "event_id": eid, **r})
+        except Exception as e:  # never fatal
+            print(f"[polymarket] {g.game_id}: {e!r}")
+            missing.append(g.game_id)
+    print(f"[polymarket] {len(rows)} lines, {len(missing)} games without markets")
+    return rows, missing

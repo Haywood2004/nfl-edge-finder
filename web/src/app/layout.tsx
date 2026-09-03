@@ -11,6 +11,7 @@ const nav = [
   { href: "/", label: "This Week" },
   { href: "/board", label: "Full Board" },
   { href: "/rankings/defense", label: "Defense" },
+  { href: "/how", label: "How it works" },
   { href: "/track-record", label: "Track Record" },
 ];
 

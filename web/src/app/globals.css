@@ -12,6 +12,9 @@
   --flat: #94a3b8;
   --accent: #60a5fa;
   --warn: #fbbf24;
+  --c-model: #3987e5;
+  --c-books: #d95926;
+  --c-poly: #199e70;
 }
 
 @theme inline {
@@ -26,6 +29,9 @@
   --color-flat: var(--flat);
   --color-accent: var(--accent);
   --color-warn: var(--warn);
+  --color-cmodel: var(--c-model);
+  --color-cbooks: var(--c-books);
+  --color-cpoly: var(--c-poly);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }

@@ -8,7 +8,7 @@ export function Feed({ cards, showAll }: { cards: Card[]; showAll: boolean }) {
   const [market, setMarket] = useState("");
   const [team, setTeam] = useState("");
   const [bk, setBk] = useState("");
-  const [minEdge, setMinEdge] = useState(showAll ? 0 : 4);
+  const [minEdge, setMinEdge] = useState(showAll ? 0 : 15);
   const [minConf, setMinConf] = useState(showAll ? 0 : 55);
   const [sort, setSort] = useState<"score" | "edge" | "confidence" | "kickoff">("score");
 

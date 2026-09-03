@@ -18,9 +18,9 @@ export type Card = {
 export async function latestCards(opts: { publishedOnly?: boolean } = {}) {
   const rows = await sql<Card[]>`
     WITH tw AS (SELECT season, week FROM cards ORDER BY kickoff_utc DESC, created_at DESC LIMIT 1),
-         run AS (SELECT max(created_at) AS ts FROM cards c JOIN tw USING (season, week))
+         run AS (SELECT market, max(created_at) AS ts FROM cards c JOIN tw USING (season, week) GROUP BY market)
     SELECT c.*, g.home_team, g.away_team
-    FROM cards c JOIN tw USING (season, week) JOIN run ON c.created_at = run.ts
+    FROM cards c JOIN tw USING (season, week) JOIN run ON c.created_at = run.ts AND c.market = run.market
     JOIN raw_games g USING (game_id)
     ${opts.publishedOnly ? sql`WHERE c.published` : sql``}
     ORDER BY c.score DESC, c.edge DESC`;
@@ -88,4 +88,27 @@ export async function trackRecord() {
            avg(clv_prob)::float AS clv
     FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published`;
   return r as { n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null };
+}
+
+export type GameProjection = {
+  id: number; created_at: string; season: number; week: number; game_id: string; home_team: string; away_team: string;
+  kickoff_utc: string; p_home_model: number; p_home_market: number | null; p_home_polymarket: number | null;
+  p_home_used: number; elo_home: number; elo_away: number;
+  home_best: { book: string; american: number; dec: number } | null; away_best: { book: string; american: number; dec: number } | null;
+  factors: Factor[];
+};
+
+export async function latestGameProjections() {
+  return sql<GameProjection[]>`
+    WITH tw AS (SELECT season, week FROM game_projections ORDER BY kickoff_utc DESC, created_at DESC LIMIT 1),
+         run AS (SELECT max(created_at) AS ts FROM game_projections g JOIN tw USING (season, week))
+    SELECT g.* FROM game_projections g JOIN tw USING (season, week) JOIN run ON g.created_at = run.ts
+    ORDER BY g.kickoff_utc, g.game_id`;
+}
+
+export async function gameCards(gameId: string) {
+  return sql<Card[]>`
+    WITH run AS (SELECT max(created_at) AS ts FROM cards WHERE game_id = ${gameId} AND market = 'h2h')
+    SELECT c.*, g.home_team, g.away_team FROM cards c JOIN raw_games g USING (game_id) JOIN run ON c.created_at = run.ts
+    WHERE c.game_id = ${gameId} AND c.market = 'h2h' ORDER BY c.edge DESC`;
 }

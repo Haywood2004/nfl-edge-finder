@@ -75,3 +75,66 @@ MAE 59.14 · coverage q25 0.243 / q75 0.745
 | air_yds_ewm | 0.015 |
 
 All 58 features: dome, temp, wind, py_l3, py_l5, att_l3, att_l5, py_ewm, py_l10, att_ewm, is_home, ypa_ewm, ypa_l10, cpoe_ewm, div_game, new_team, week_num, games_std, opp_games, primetime, py_sd_l10, rest_days, team_proe, py_std_avg, team_games, total_line, air_yds_ewm, epa_att_ewm, spread_team, usage_trend, games_career, rush_yds_ewm, implied_total, opp_sack_rate, sack_rate_ewm, team_plays_pg, py_prev_season, team_pass_rate, days_since_last, team_pass_yds_pg, games_prev_season, team_epa_per_play, opp_pass_epa_allowed, opp_rush_epa_allowed, team_pass_epa_per_db, opp_sos_adj_pass_rank, opp_te_yds_allowed_pg, opp_wr_yds_allowed_pg, opp_dropbacks_faced_pg, opp_pass_yds_allowed_pg, opp_rush_yds_allowed_pg, opp_yac_per_comp_allowed, opp_pass_epa_allowed_rank, opp_pass_yds_allowed_rank, opp_yds_per_dropback_rank, opp_sos_adj_pass_yds_allowed, opp_yds_per_dropback_allowed, opp_explosive_pass_rate_allowed
+
+# MODEL.md — moneyline (ml-logit-v1)
+
+Last retrain: 2026-09-03 00:05 UTC · model_run id 37
+
+Logistic regression on Elo diff (home field included), EPA rating diff, rest diff, divisional, neutral site, QB change and QB inexperience. Train 2016–2023 → validate 2024 (anchor weight) → test 2025. Anchor weight toward the no-vig market: **0.95** (chosen by validation log-loss).
+
+Standardised coefficients: elo_diff +0.447, epa_diff +0.238, rest_diff +0.085, div_game -0.019, neutral -0.069, qb_change_diff -0.131, qb_inexp_diff +0.121
+
+## Test 2025 — REAL closing moneylines (nflverse)
+
+| metric | model | market | blend |
+|---|---|---|---|
+| log-loss | 0.6359 | 0.6082 | 0.6090 |
+| accuracy | 0.621 | 0.658 | – |
+
+### Betting at the closing price (2025, blend)
+
+| min edge | bets | wins | win rate | units | ROI |
+|---|---|---|---|---|---|
+| >=0.02 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.04 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.06 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.08 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.10 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.15 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+
+### Walk-forward 2019–2025 (model trained on 2016–2018 only, blend)
+
+| min edge | bets | wins | win rate | units | ROI |
+|---|---|---|---|---|---|
+| >=0.02 | 3 | 1 | 0.333 | -0.78 | -0.260 |
+| >=0.04 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.06 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.08 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.10 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+| >=0.15 | 0 | 0 | 0.000 | +0.00 | +0.000 |
+
+### Why the anchor is 0.95 — the RAW ratings model bet against closing lines, 2019–2025
+
+Every 'edge' the un-anchored model sees against a closing NFL moneyline loses money, including the biggest ones. That is the reason moneyline cards are only flagged for price discrepancies between venues, not for model-vs-market disagreement.
+
+| min edge | bets | wins | win rate | units | ROI |
+|---|---|---|---|---|---|
+| >=0.02 | 1510 | 707 | 0.468 | -145.36 | -0.096 |
+| >=0.04 | 1192 | 546 | 0.458 | -143.56 | -0.120 |
+| >=0.06 | 892 | 405 | 0.454 | -102.67 | -0.115 |
+| >=0.08 | 641 | 279 | 0.435 | -78.20 | -0.122 |
+| >=0.10 | 435 | 185 | 0.425 | -48.79 | -0.112 |
+| >=0.15 | 176 | 66 | 0.375 | -24.47 | -0.139 |
+
+### Calibration (2025, blend)
+
+| bucket | n | predicted | actual |
+|---|---|---|---|
+| (0.0, 0.3] | 34 | 0.227 | 0.206 |
+| (0.3, 0.4] | 37 | 0.351 | 0.432 |
+| (0.4, 0.5] | 44 | 0.447 | 0.409 |
+| (0.5, 0.6] | 44 | 0.556 | 0.591 |
+| (0.6, 0.7] | 45 | 0.646 | 0.511 |
+| (0.7, 1.0] | 68 | 0.797 | 0.824 |
+
+Validation 2024: log-loss model 0.6021 vs market 0.5875.

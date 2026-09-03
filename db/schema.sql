@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS raw_games (
   kickoff_utc    timestamptz,             -- derived from gameday+gametime (ET) at ingest
   away_team      text NOT NULL,
   home_team      text NOT NULL,
+  location       text,                     -- Home | Neutral
   away_score     int,
   home_score     int,
   result         numeric,
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS raw_games (
   stadium        text,
   ingested_at    timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS location text;
 CREATE INDEX IF NOT EXISTS raw_games_season_week ON raw_games(season, week);
 
 -- Curated column subset of nflverse pbp (full parquet kept in pipeline/.cache). See DECISIONS.md #4.
@@ -454,3 +456,26 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
   rows        int,
   detail      jsonb
 );
+
+-- Game-level win probabilities for the moneyline layer (append-only per scoring run)
+CREATE TABLE IF NOT EXISTS game_projections (
+  id                 bigserial PRIMARY KEY,
+  model_run_id       bigint REFERENCES model_runs(id),
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  season             int NOT NULL,
+  week               int NOT NULL,
+  game_id            text NOT NULL,
+  snapshot_id        bigint REFERENCES odds_snapshots(id),
+  home_team          text NOT NULL,
+  away_team          text NOT NULL,
+  kickoff_utc        timestamptz,
+  p_home_model       numeric NOT NULL,     -- raw ratings model
+  p_home_market      numeric,              -- sportsbook no-vig consensus
+  p_home_polymarket  numeric,              -- Polymarket mid
+  p_home_used        numeric NOT NULL,     -- blend used for cards
+  elo_home           numeric, elo_away numeric,
+  home_best          jsonb,                -- {book, american, decimal}
+  away_best          jsonb,
+  factors            jsonb NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS game_projections_sw ON game_projections(season, week);

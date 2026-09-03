@@ -19,7 +19,7 @@ ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 FIRST_TRAIN_SEASON = 2016
 
 # Card publication thresholds (brief §4.5). Tune on backtests; see docs/MODEL.md.
-PUBLISH_MIN_EDGE = 0.04
+PUBLISH_MIN_EDGE = 0.15   # user-set bar (2026-09-03); everything below stays on the full board
 PUBLISH_MIN_CONFIDENCE = 55
 
 # Scoring blends the model mean toward the consensus line: mean_used = (1-w)*model + w*line.

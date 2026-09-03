@@ -34,8 +34,13 @@ def main(argv=None):
         ingest.ingest_snaps(a.seasons)
     elif a.job == "ingest_weather":
         ingest.ingest_weather(a.week)
-    elif a.job in ("ingest_odds", "snapshot"):
+    elif a.job == "ingest_odds":
         ingest.ingest_odds(a.label, tuple(a.markets), week=a.week, from_dir=a.from_dir, max_events=a.max_events)
+    elif a.job == "snapshot":     # cron: new odds snapshot, then rescore both markets against it
+        ingest.ingest_odds(a.label, tuple(a.markets), week=a.week, from_dir=a.from_dir, max_events=a.max_events)
+        from .scoring.cards import score_week
+        from .scoring.moneyline_cards import score_moneylines
+        score_week(a.week); score_moneylines(a.week)
     elif a.job == "build_features":
         from .features.build import build_features
         build_features(a.seasons, a.week)
@@ -44,7 +49,14 @@ def main(argv=None):
         train()
     elif a.job == "score":
         from .scoring.cards import score_week
-        score_week(a.week)
+        from .scoring.moneyline_cards import score_moneylines
+        score_week(a.week); score_moneylines(a.week)
+    elif a.job == "train_ml":
+        from .models.moneyline import train
+        train()
+    elif a.job == "score_ml":
+        from .scoring.moneyline_cards import score_moneylines
+        score_moneylines(a.week)
     elif a.job == "grade":
         from .grading.grade import grade_cards
         grade_cards()
@@ -52,28 +64,33 @@ def main(argv=None):
         ingest.ingest_schedule(); ingest.ingest_pbp(a.seasons); ingest.ingest_weekly_stats(a.seasons)
         ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
     elif a.job == "weekly":       # Tuesday: refresh data, snapshot open, features, score
-        ingest.ingest_schedule(); ingest.ingest_pbp([_cur()]); ingest.ingest_weekly_stats([_cur()])
+        ingest.ingest_schedule(list(range(2009, _cur() + 1))); ingest.ingest_pbp([_cur()]); ingest.ingest_weekly_stats([_cur()])
         ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
         ingest.ingest_odds("tue_open", tuple(a.markets))
         ingest.ingest_weather()
         from .features.build import build_features
         from .scoring.cards import score_week
-        build_features(); score_week()
+        from .scoring.moneyline_cards import score_moneylines
+        from .models.moneyline import train as train_ml
+        build_features(); train_ml(); score_week(); score_moneylines()
     elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
         ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_weather()
         ingest.ingest_odds("sun_am", tuple(a.markets))
         from .features.build import build_features
         from .scoring.cards import score_week
-        build_features(); score_week()
+        from .scoring.moneyline_cards import score_moneylines
+        build_features(); score_week(); score_moneylines()
     elif a.job == "bootstrap":    # first run from scratch
-        ingest.ingest_schedule(); ingest.ingest_pbp(); ingest.ingest_weekly_stats()
+        ingest.ingest_schedule(list(range(2009, _cur() + 1))); ingest.ingest_pbp(); ingest.ingest_weekly_stats()
         ingest.ingest_injuries(); ingest.ingest_depth_charts(); ingest.ingest_rosters(); ingest.ingest_snaps()
         from .features.build import build_features
         from .models.passing_yards import train
         from .scoring.cards import score_week
-        build_features(); train()
+        from .scoring.moneyline_cards import score_moneylines
+        from .models.moneyline import train as train_ml
+        build_features(); train(); train_ml()
         ingest.ingest_odds("tue_open", tuple(a.markets)); ingest.ingest_weather()
-        score_week()
+        score_week(); score_moneylines()
     else:
         print(f"unknown job {a.job}", file=sys.stderr); return 2
     return 0
