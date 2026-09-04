@@ -26,9 +26,14 @@ def main(argv=None):
         ingest.ingest_weekly_stats(a.seasons)
     elif a.job == "ingest_injuries":
         ingest.ingest_injuries(a.seasons)
-    elif a.job == "backtest_lines":   # passing-yards model vs real closing lines (fixtures from odds_history)
+    elif a.job == "backtest_lines":   # prop model vs real closing lines (fixtures from odds_history)
         from .models.backtest_lines import run
-        run(a.seasons or None)
+        for m in (a.markets or ["player_pass_yds"]):
+            run(a.seasons or None, market=m)
+    elif a.job == "train_props":      # receiving yards, receptions, rushing yards
+        from .models.player_props import train as train_prop, SPECS
+        for m in (a.markets if a.markets != ["player_pass_yds"] else list(SPECS)):
+            train_prop(m)
     elif a.job == "odds_history":   # historical closing lines for backtests (costs credits; see odds_history.py)
         from .ingest.odds_history import backfill_odds_history
         backfill_odds_history(a.seasons or [2024, 2025], tuple(a.markets), max_events=a.max_events)

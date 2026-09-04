@@ -28,9 +28,9 @@ def _norm(s: str) -> str:
     return " ".join(s.split())
 
 
-def main_lines(lines: pd.DataFrame) -> pd.DataFrame:
+def main_lines(lines: pd.DataFrame, market: str = "player_pass_yds") -> pd.DataFrame:
     """One two-way price per (game, player, book): the book's main line = the alternate closest to even money."""
-    l = lines[lines.market == "player_pass_yds"].copy()
+    l = lines[lines.market == market].copy()
     l["nname"] = l.player.map(_norm)
     o = l[l.side == "Over"][["season", "week", "game_id", "nname", "bookmaker", "line", "price_decimal"]].rename(columns={"price_decimal": "over_dec"})
     u = l[l.side == "Under"][["game_id", "nname", "bookmaker", "line", "price_decimal"]].rename(columns={"price_decimal": "under_dec"})
@@ -42,14 +42,42 @@ def main_lines(lines: pd.DataFrame) -> pd.DataFrame:
     return two.drop(columns="skew")
 
 
+class _Adapter:
+    """Market-specific fit/refit so the backtest is one code path for every prop model."""
+    def __init__(self, market: str):
+        self.market = market
+        if market == "player_pass_yds":
+            self.spec = None
+        else:
+            from .player_props import SPECS
+            self.spec = SPECS[market]
+
+    def load(self):
+        if self.spec is None:
+            return PY.load_training()
+        from .player_props import load_training
+        return load_training(self.spec)
+
+    def fit(self, df, names, tr, va):
+        if self.spec is None:
+            return PY.fit(df, names, tr, va)
+        from .player_props import fit
+        return fit(self.spec, df, names, tr, va)
+
+    @property
+    def base_col(self):
+        return PY.BASE_COL if self.spec is None else self.spec.base_col
+
+
 def score_season(df: pd.DataFrame, names: list[str], lines: pd.DataFrame, season: int,
-                 level_w: float, anchor_w: float, model: PY.PassingYardsModel | None = None):
+                 level_w: float, anchor_w: float, model=None, adapter: _Adapter | None = None):
     """Return (bets DataFrame with every side priced, model) for one test season."""
+    adapter = adapter or _Adapter("player_pass_yds")
     if model is None:
         seasons = sorted(df.season.unique())
         tr = [s for s in seasons if s < season - 1]
-        model = PY.fit(df, names, tr, season - 1)
-        base = df[PY.BASE_COL].fillna(df[PY.BASE_COL].mean())
+        model = adapter.fit(df, names, tr, season - 1)
+        base = df[adapter.base_col].fillna(df[adapter.base_col].mean())
         model.mean_model = PY._fit_mean(df[df.season < season][names], (df.y - base)[df.season < season], n_iter=model.n_iter)
     t = df[df.season == season].copy()
     pred = model.predict(t)
@@ -98,18 +126,19 @@ def summarize(b: pd.DataFrame, thresholds=(0.0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.
     return out
 
 
-def run(seasons: list[int] | None = None, grid: bool = True) -> dict:
-    lines = main_lines(load_fixtures(seasons))
+def run(seasons: list[int] | None = None, grid: bool = True, market: str = "player_pass_yds") -> dict:
+    adapter = _Adapter(market)
+    lines = main_lines(load_fixtures(seasons), market)
     if lines.empty:
-        raise RuntimeError("no historical lines; run `python -m nfl_edge odds_history` first")
-    df, names = PY.load_training()
+        raise RuntimeError(f"no historical lines for {market}; run `python -m nfl_edge odds_history --markets {market}` first")
+    df, names = adapter.load()
     avail = sorted(set(lines.season.unique()) & set(df.season.unique()))
     print(f"[backtest] seasons with closing lines: {avail}; {len(lines)} book-lines")
-    res = {"seasons": avail, "level_w": LEVEL_ANCHOR_W, "anchor_w": MARKET_ANCHOR_W, "per_season": {}, "by_side": {}, "grid": {}}
+    res = {"market": market, "seasons": avail, "level_w": LEVEL_ANCHOR_W, "anchor_w": MARKET_ANCHOR_W, "per_season": {}, "by_side": {}, "grid": {}}
     models = {}
     allb = []
     for s in avail:
-        b, m = score_season(df, names, lines, s, LEVEL_ANCHOR_W, MARKET_ANCHOR_W)
+        b, m = score_season(df, names, lines, s, LEVEL_ANCHOR_W, MARKET_ANCHOR_W, adapter=adapter)
         models[s] = m
         allb.append(b)
         res["per_season"][str(s)] = summarize(b)
@@ -120,17 +149,19 @@ def run(seasons: list[int] | None = None, grid: bool = True) -> dict:
         res["by_side"][side] = summarize(g, (0.0, 0.04, 0.08))
     # calibration at real lines: predicted p vs hit rate
     allb["bucket"] = pd.cut(allb.p, [0, .4, .45, .5, .55, .6, .65, .7, 1.0])
+    allb.to_parquet(ROOT / "pipeline" / "artifacts" / f"backtest_{market}.parquet", index=False)
     res["calibration_real_lines"] = [{"bucket": str(k), "n": int(len(g)), "pred": float(g.p.mean()), "actual": float(g.win.mean())}
                                      for k, g in allb[~allb.push].groupby("bucket", observed=True)]
     if grid:
         for lw in (0.0, 0.5, 1.0):
             for aw in (0.0, 0.2, 0.35, 0.5, 0.7):
-                gb = pd.concat([score_season(df, names, lines, s, lw, aw, models[s])[0] for s in avail])
+                gb = pd.concat([score_season(df, names, lines, s, lw, aw, models[s], adapter)[0] for s in avail])
                 sm = summarize(gb, (0.02, 0.04, 0.06))
                 res["grid"][f"level={lw:.1f},anchor={aw:.2f}"] = sm
                 print(f"[grid] level {lw:.1f} anchor {aw:.2f}: " + " | ".join(
                     f"{k[5:]}: {v['bets']}b {v['roi']:+.3f}" if v["roi"] is not None else f"{k[5:]}: 0b" for k, v in sm.items()))
-    write_md(res)
+    if market == "player_pass_yds":
+        write_md(res)
     return res
 
 

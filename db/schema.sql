@@ -366,6 +366,12 @@ CREATE TABLE IF NOT EXISTS feat_player_game (
   target_attempts      numeric,
   PRIMARY KEY (season, week, player_id, game_id)
 );
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_receiving_yards numeric;   -- skill positions (Milestone 2)
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_receptions numeric;
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_rushing_yards numeric;
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_targets numeric;
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_carries numeric;
+CREATE INDEX IF NOT EXISTS feat_player_game_pos ON feat_player_game(position, season, week);
 CREATE INDEX IF NOT EXISTS feat_player_game_sw ON feat_player_game(season, week);
 
 -- ---------------------------------------------------------------------------
