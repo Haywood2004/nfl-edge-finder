@@ -182,7 +182,9 @@ def train(persist: bool = True) -> int:
         from .backtest_lines import run as backtest_real
         metrics["real_lines"] = backtest_real(grid=False)
     except Exception as e:
+        import traceback
         print(f"[train] real-line backtest skipped: {e}")
+        metrics["real_lines_error"] = traceback.format_exc()[-1500:]
     imp = pd.Series(model.mean_model.feature_importance("gain"), index=names).sort_values(ascending=False)
     metrics["feature_importance"] = {k: float(v) for k, v in (imp / imp.sum()).head(25).items()}
     print(json.dumps({k: v for k, v in metrics["holdout"].items() if k != "calibration"}, indent=1))
