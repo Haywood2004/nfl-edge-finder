@@ -27,10 +27,13 @@ on:
     - cron: "0 14,16,18,20,22,0 * * 0"  # Sun game-day poll every 2h
     - cron: "0 11 * * 2"      # Tue morning: grade last week
 
+permissions:
+  contents: write      # odds_history commits parquet fixtures back to the repo
+
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     env:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -59,3 +62,11 @@ jobs:
           esac
       - run: python -m nfl_edge ${{ steps.job.outputs.job }}
         working-directory: pipeline
+      - name: Commit fixtures produced by the job (historical odds)
+        if: always()
+        run: |
+          git config user.name "nfl-edge-bot"; git config user.email "bot@nfl-edge-finder"
+          git add pipeline/fixtures/odds_history || true
+          if ! git diff --cached --quiet; then
+            git commit -m "fixtures: historical odds [skip ci]" && git push
+          fi
