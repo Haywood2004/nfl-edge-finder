@@ -177,6 +177,12 @@ def train(persist: bool = True) -> int:
     metrics = {"holdout": evaluate(model, df[df.season.isin(test_s)], proxy),
                "valid": evaluate(model, df[df.season == valid_s]),
                "n_iter": model.n_iter, "scale_cal": model.scale_cal}
+    # real closing-line backtest (fixtures from `odds_history`), no grid — what the site's model card shows
+    try:
+        from .backtest_lines import run as backtest_real
+        metrics["real_lines"] = backtest_real(grid=False)
+    except Exception as e:
+        print(f"[train] real-line backtest skipped: {e}")
     imp = pd.Series(model.mean_model.feature_importance("gain"), index=names).sort_values(ascending=False)
     metrics["feature_importance"] = {k: float(v) for k, v in (imp / imp.sum()).head(25).items()}
     print(json.dumps({k: v for k, v in metrics["holdout"].items() if k != "calibration"}, indent=1))

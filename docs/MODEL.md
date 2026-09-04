@@ -1,6 +1,6 @@
 # MODEL.md — passing yards (py-lgbm-v2)
 
-Last retrain: 2026-09-04 19:08 UTC · model_run id 39
+Last retrain: 2026-09-04 21:20 UTC · model_run id 40
 
 ## Protocol
 

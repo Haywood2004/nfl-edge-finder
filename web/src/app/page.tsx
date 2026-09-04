@@ -5,16 +5,16 @@ import { GameTile, GameLegend } from "@/components/GameTile";
 import { PropTile } from "@/components/PropTile";
 import { EdgeMeter } from "@/components/EdgeMeter";
 import { ago, num, pct, signedPct } from "@/lib/format";
+import { BAR_PROPS, BAR_ML, barFor, clearsBar } from "@/lib/thresholds";
 
 export const dynamic = "force-dynamic";
-const BAR = 0.15;
 
 export default async function Home() {
   const [cards, games, rec, f] = await Promise.all([latestCards(), latestGameProjections(), trackRecord(), freshness()]);
   const wk = cards[0] ?? games[0];
   const props = cards.filter((c) => c.market !== "h2h");
   const mls = cards.filter((c) => c.market === "h2h");
-  const clears = cards.filter((c) => Number(c.edge) >= BAR && c.confidence >= 55);
+  const clears = cards.filter((c) => clearsBar(c.market, Number(c.edge), c.confidence));
   const ranked = [...cards].sort((a, b) => Number(b.edge) - Number(a.edge));
   const closest = ranked.slice(0, 4);
   const maxEdge = closest[0] ? Number(closest[0].edge) : 0;
@@ -32,13 +32,13 @@ export default async function Home() {
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
             Every line on the board is priced against a projection that accounts for the opposing defense, the injury report on both sides and the game environment.
-            A card is flagged only when the model&apos;s number beats the best available price by {Math.round(BAR * 100)}% or more — and every card shows its reasons.
+            A prop is flagged when the model&apos;s probability beats the best available price by {Math.round(BAR_PROPS * 100)}% or more (a bar chosen from three seasons of real closing lines); a moneyline only when a venue misprices it by {Math.round(BAR_ML * 100)}%. Every card shows its reasons.
           </p>
           <div className="mt-4"><Freshness /></div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
           <Kpi label="Bets priced" value={String(cards.length)} sub={`${props.length} props · ${mls.length} moneyline`} />
-          <Kpi label="Flagged ≥ 15%" value={String(clears.length)} sub={`top edge ${signedPct(maxEdge)}`} tone={clears.length ? "up" : undefined} />
+          <Kpi label="Flagged" value={String(clears.length)} sub={`top edge ${signedPct(maxEdge)}`} tone={clears.length ? "up" : undefined} />
           <Kpi label="Record" value={graded ? `${rec.wins}-${rec.losses}${rec.pushes ? `-${rec.pushes}` : ""}` : "0-0"} sub={graded ? `${pct(rec.wins / graded, 1)} · ${signedPct(roi)} ROI` : "grades after Week 1"} />
           <Kpi label="Model" value={f.trained_at ? ago(f.trained_at) : "–"} sub="last retrain" />
         </div>
@@ -49,19 +49,18 @@ export default async function Home() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <p className="eyebrow">Flagged this week</p>
-            <h2 className="h-section mt-1">Edges ≥ {Math.round(BAR * 100)}% with confidence ≥ 55</h2>
+            <h2 className="h-section mt-1">Props ≥ {Math.round(BAR_PROPS * 100)}% · moneylines ≥ {Math.round(BAR_ML * 100)}% · confidence ≥ 55</h2>
           </div>
           <Link href="/board" className="text-sm text-accent hover:underline">Full board →</Link>
         </div>
         {clears.length ? (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">{clears.map((c) => <PropTile key={c.id} c={c} bar={BAR} />)}</div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">{clears.map((c) => <PropTile key={c.id} c={c} bar={barFor(c.market)} />)}</div>
         ) : (
           <div className="mt-4 grid gap-5 md:grid-cols-[1fr_1.1fr] md:items-center">
             <div className="min-w-0">
               <p className="text-4xl font-semibold tracking-tight tnum">0 <span className="text-base font-normal text-muted">flagged</span></p>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                The biggest edge on the board is {signedPct(maxEdge)}. The bar is deliberately high — in NFL markets a claimed 15% gap is usually the model being wrong, not the book.
-                Everything below the bar is still priced, explained and tracked as a paper bet.
+                The biggest edge on the board is {signedPct(maxEdge)}. Everything below the bar is still priced, explained and tracked as a paper bet.
               </p>
             </div>
             <div className="min-w-0 space-y-1.5">
@@ -72,7 +71,7 @@ export default async function Home() {
                     <span className="font-medium">{c.market === "h2h" ? c.team : c.player_name}</span>
                     <span className="text-muted"> · {c.market === "h2h" ? "ML" : `${c.side} ${c.line ?? ""}`}</span>
                   </span>
-                  <EdgeMeter edge={Number(c.edge)} bar={BAR} width={90} />
+                  <EdgeMeter edge={Number(c.edge)} bar={barFor(c.market)} width={90} />
                 </Link>
               ))}
             </div>
@@ -102,7 +101,7 @@ export default async function Home() {
           <Link href="/board" className="text-sm text-accent hover:underline">All {props.length} priced →</Link>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {props.sort((a, b) => Number(b.edge) - Number(a.edge)).slice(0, 9).map((c) => <PropTile key={c.id} c={c} bar={BAR} />)}
+          {props.sort((a, b) => Number(b.edge) - Number(a.edge)).slice(0, 9).map((c) => <PropTile key={c.id} c={c} bar={BAR_PROPS} />)}
         </div>
       </section>
 

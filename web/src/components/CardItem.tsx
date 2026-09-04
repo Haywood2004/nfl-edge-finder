@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, num, pct, signedPct } from "@/lib/format";
 import { FactorList } from "./FactorList";
+import { barFor } from "@/lib/thresholds";
 
 export function CardItem({ c }: { c: Card }) {
   const over = c.side === "Over";
@@ -25,7 +26,7 @@ export function CardItem({ c }: { c: Card }) {
       </div>
       <p className="mt-1 text-[12px] text-muted">{matchup} · {kickoff(c.kickoff_utc)} · best price <span className="text-fg-2 tnum">{american(c.price_american)}</span> {book(c.book)}</p>
       <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
-        <Stat label="Edge" value={signedPct(Number(c.edge))} strong up={Number(c.edge) >= 0.15} />
+        <Stat label="Edge" value={signedPct(Number(c.edge))} strong up={Number(c.edge) >= barFor(c.market)} />
         <Stat label="Model" value={pct(Number(c.model_prob))} />
         <Stat label="Market" value={pct(Number(c.market_prob))} />
         <Stat label="Conf" value={String(c.confidence)} />

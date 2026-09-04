@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE
+from ..config import PUBLISH_MIN_EDGE_ML as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE
 from ..ingest.odds_jobs import target_week
 from ..features.team_ratings import game_features
 from ..models.moneyline import load_latest, MARKET

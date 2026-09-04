@@ -13,7 +13,7 @@ import re
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W
+from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE_PROPS as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W
 from ..ingest.odds_jobs import target_week
 from ..models.passing_yards import load_latest, MARKET
 from ..sources.odds_api import american

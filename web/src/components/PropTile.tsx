@@ -6,7 +6,7 @@ import { EdgeMeter } from "./EdgeMeter";
 export function PropTile({ c, bar }: { c: Card; bar: number }) {
   const top = c.factors.filter((f) => f.factor !== "projection" && f.impact !== "▬").slice(0, 2);
   const over = c.side === "Over";
-  const clears = Number(c.edge) >= bar && c.confidence >= 55;
+  const clears = Number(c.edge) >= bar && c.confidence >= 55;  // bar passed per market
   return (
     <Link href={`/cards/${c.id}`} className={`card card-hover block min-w-0 overflow-hidden p-4 ${clears ? "ring-1 ring-up/40" : ""}`}>
       <div className="flex items-start justify-between gap-3">

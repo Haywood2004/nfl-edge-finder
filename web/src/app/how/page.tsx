@@ -1,5 +1,5 @@
 import { modelCards } from "@/lib/queries";
-import { num, pct } from "@/lib/format";
+import { num, pct, signedPct } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Methodology" };
@@ -13,6 +13,8 @@ export default async function How() {
   const h = (py?.metrics as { holdout?: Record<string, unknown> } | undefined)?.holdout as
     | { n: number; mae: number; mae_baseline_ewm: number; mae_baseline_prev_season: number; cov_q10: number; cov_q25: number; cov_q75: number; cov_q90: number; calibration: Cal[] }
     | undefined;
+  type Bucket = { bets: number; wins: number; losses: number; pushes: number; win_rate: number | null; units: number; roi: number | null; avg_price: number | null };
+  const rl = (py?.metrics as { real_lines?: { seasons: number[]; overall: Record<string, Bucket>; per_season: Record<string, Record<string, Bucket>>; by_side: Record<string, Record<string, Bucket>> } } | undefined)?.real_lines;
   const mlt = (ml?.metrics as { test_2025?: Record<string, number>; anchor_w?: number; walk_forward_raw_model?: { betting: Record<string, { bets: number; roi: number; win_rate: number }> } } | undefined);
 
   return (
@@ -30,7 +32,7 @@ export default async function How() {
         <Step n={1} title="Point-in-time features" body="Player form (rolling and exponentially-weighted yards, attempts, EPA, CPOE, air yards, sack rate), the opponent's schedule-adjusted pass defense (yards and EPA per dropback, pressure, explosive-play and YAC allowed), the offense's script-neutral pass rate and pace, the market's spread, total and implied points, rest, weather and dome status, the injury report on both sides, and whether the coaching staff is new. A feature for Week 9 may only use data that existed before Week 9 kicked off; a test enforces it." />
         <Step n={2} title="A distribution, not a number" body="Two gradient-boosted models: one for the mean, one for the spread. The target is modelled relative to the league's passing environment so era drift cannot bias it, and the residual shape is taken from held-out seasons rather than assumed Normal. That gives a real probability for any line, not just a projection." />
         <Step n={3} title="Priced against every venue" body="Lines are snapshotted from every US book (and Polymarket for moneylines) on a fixed schedule and never overwritten. Each book's hold is removed to get a fair probability; the edge is the model's probability minus the fair probability at the best available price. Projections are anchored partly toward the market, because the books price things a stats model cannot see." />
-        <Step n={4} title="Confidence, then the bar" body="A 0–100 confidence score shrinks the edge for thin samples, new teams, early-season priors, missing injury or weather data, line moves against the pick and implausibly large gaps. A card is flagged at edge ≥ 15% and confidence ≥ 55. Everything else is priced, explained and tracked as a paper bet on the Full Board." />
+        <Step n={4} title="Confidence, then the bar" body="A 0–100 confidence score shrinks the edge for thin samples, new teams, early-season priors, missing injury or weather data, line moves against the pick and implausibly large gaps. A prop is flagged at edge ≥ 6% and confidence ≥ 55 — the bar where three seasons of real closing lines show the model paying — and a moneyline only at a 15% venue mispricing. Everything else is priced, explained and tracked as a paper bet on the Full Board." />
       </ol>
 
       {h && (
@@ -67,6 +69,35 @@ export default async function How() {
             </div>
             <p className="mt-2 text-[12px] text-dim">Bar = predicted over-probability bucket; green tick = actual over rate at synthetic lines across {h.n} held-out games.</p>
           </div>
+        </section>
+      )}
+
+      {rl && (
+        <section className="card p-5 sm:p-6">
+          <p className="eyebrow">Backtest · real closing lines</p>
+          <h2 className="h-section mt-1">Passing yards vs the books&apos; closing lines, {rl.seasons[0]}–{rl.seasons.at(-1)}</h2>
+          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+            Every US book&apos;s closing passing-yards line (kickoff − 60 min) from The Odds API historical archive, {rl.seasons.length} full seasons. The model is fit walk-forward
+            (never sees the season it is scored on), priced exactly as the live cards are, and bets 1 unit flat on every side that clears the edge threshold at the best price.
+            This is the number that matters: not whether the model is accurate, but whether it beats the price.
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="data text-[13px]">
+              <thead><tr><th>Min edge</th><th>Bets</th><th>W-L</th><th>Win rate</th><th>Units</th><th>ROI</th>{rl.seasons.map((s) => <th key={s}>{s} ROI</th>)}</tr></thead>
+              <tbody>
+                {Object.entries(rl.overall).filter(([k]) => ["edge>=0.02", "edge>=0.04", "edge>=0.06", "edge>=0.08", "edge>=0.10"].includes(k)).map(([k, r]) => (
+                  <tr key={k} className={k === "edge>=0.06" ? "bg-up/5" : ""}>
+                    <td className="font-medium">≥ {Math.round(Number(k.slice(6)) * 100)}%{k === "edge>=0.06" && <span className="pill pill-up ml-1.5">publish bar</span>}</td>
+                    <td>{r.bets}</td><td>{r.wins}-{r.losses}</td><td>{r.win_rate == null ? "–" : pct(r.win_rate, 1)}</td>
+                    <td className={r.units >= 0 ? "text-up" : "text-down"}>{r.units >= 0 ? "+" : ""}{num(r.units, 1)}</td>
+                    <td className={`font-semibold ${(r.roi ?? 0) >= 0 ? "text-up" : "text-down"}`}>{r.roi == null ? "–" : signedPct(r.roi)}</td>
+                    {rl.seasons.map((s) => { const x = rl.per_season[String(s)]?.[k]; return <td key={s} className={(x?.roi ?? 0) >= 0 ? "text-up" : "text-down"}>{x?.roi == null ? "–" : `${signedPct(x.roi)} (${x.bets})`}</td>; })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-[12px] text-dim">Break-even at the average price (−110) is 52.4%. Units are 1u per bet; ROI = units ÷ bets. Sample sizes are what they are — read the three season columns together, not any one of them.</p>
         </section>
       )}
 

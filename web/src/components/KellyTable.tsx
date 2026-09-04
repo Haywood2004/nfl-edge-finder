@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, pct, signedPct } from "@/lib/format";
 import { kellyFull, kellyStake, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT } from "@/lib/kelly";
+import { barFor } from "@/lib/thresholds";
 
 const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half"], [0.25, "Quarter (default)"], [0.125, "Eighth"]] as const;
 
@@ -75,7 +76,7 @@ export function KellyTable({ cards }: { cards: Card[] }) {
                   </td>
                   <td>{american(c.price_american)} <span className="text-muted">{book(c.book)}</span></td>
                   <td>{pct(p, 1)}</td><td className="text-muted">{pct(Number(c.market_prob), 1)}</td>
-                  <td className={Number(c.edge) >= 0.15 ? "text-up" : ""}>{signedPct(Number(c.edge))}</td>
+                  <td className={Number(c.edge) >= barFor(c.market) ? "text-up" : ""}>{signedPct(Number(c.edge))}</td>
                   <td>{(ev * 100).toFixed(1)}¢</td>
                   <td>{pct(full, 1)}</td>
                   <td className={`font-semibold ${stake > 0 ? "text-fg" : "text-muted"}`}>{stake > 0 ? `${stake.toFixed(2)}u` : "skip"}</td>

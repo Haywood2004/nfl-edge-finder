@@ -229,9 +229,10 @@ def confidence_score(X: dict, cand: dict, open_line, weather, injury, injury_dat
         against = moved > 0 if side == "Over" else moved < 0
         if against and abs(moved) >= 2:
             c -= min(10, 2.5 * abs(moved))
-    # sanity: very large disagreements with the market are more often model error than edge
+    # very large disagreements: on real closing lines (2023–25) the 4–10% band pays (+4.5–6.7% ROI) while
+    # ≥10% edges are net negative (193 bets, −5.4%) — extreme gaps are more often model error than edge
     if cand["edge"] > 0.15:
         c -= 12
     elif cand["edge"] > 0.10:
-        c -= 5
+        c -= 6
     return int(max(0, min(100, round(c))))

@@ -19,13 +19,18 @@ ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 FIRST_TRAIN_SEASON = 2016
 
 # Card publication thresholds (brief §4.5). Tune on backtests; see docs/MODEL.md.
-PUBLISH_MIN_EDGE = 0.15   # user-set bar (2026-09-03); everything below stays on the full board
+# Publish bars, per market family (DECISIONS.md #24). Props: 6% — from the real closing-line backtest
+# (2023–25: edge ≥6% → 446 bets, 55.6%, +6.5% ROI; ≥15% → 12 bets in three seasons). Moneylines keep
+# the user's 15% bar because ML cards are venue price gaps, not model opinions.
+PUBLISH_MIN_EDGE_PROPS = float(os.environ.get("PUBLISH_MIN_EDGE_PROPS", "0.06"))
+PUBLISH_MIN_EDGE_ML = float(os.environ.get("PUBLISH_MIN_EDGE_ML", "0.15"))
+PUBLISH_MIN_EDGE = PUBLISH_MIN_EDGE_PROPS   # back-compat alias
 PUBLISH_MIN_CONFIDENCE = 55
 
 # Scoring blends the model mean toward the consensus line: mean_used = (1-w)*model + w*line.
 # Provisional (DECISIONS.md #7); refit once graded cards + CLV accumulate.
-LEVEL_ANCHOR_W = float(os.environ.get("LEVEL_ANCHOR_W", "0.5"))   # share of the league-wide line-vs-model gap applied to every projection
-MARKET_ANCHOR_W = 0.35
+LEVEL_ANCHOR_W = float(os.environ.get("LEVEL_ANCHOR_W", "1.0"))   # share of the league-wide line-vs-model gap applied to every projection
+MARKET_ANCHOR_W = float(os.environ.get("MARKET_ANCHOR_W", "0.2"))   # chosen on the real-line grid (backtest_lines.py)
 
 US_BOOKS_REGION = "us"
 PROP_MARKETS_V1 = [

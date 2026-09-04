@@ -1,5 +1,5 @@
 /** Edge vs the publish bar. Fill = edge (capped at 2× bar); tick = the bar. width 999 = fill the row. */
-export function EdgeMeter({ edge, bar = 0.15, width = 140 }: { edge: number; bar?: number; width?: number }) {
+export function EdgeMeter({ edge, bar = 0.06, width = 140 }: { edge: number; bar?: number; width?: number }) {
   const max = bar * 2;
   const pct = Math.max(0, Math.min(1, edge / max));
   const barPct = bar / max;

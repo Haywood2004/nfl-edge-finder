@@ -130,7 +130,7 @@ export async function modelCards() {
 export async function trackBreakdown() {
   return sql<{ kind: string; key: string; n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null }[]>`
     WITH g AS (
-      SELECT c.market, c.week, CASE WHEN c.edge >= 0.15 THEN 'flagged' ELSE 'paper' END AS tier, gr.result, gr.profit_units, gr.clv_prob
+      SELECT c.market, c.week, CASE WHEN c.edge >= (CASE WHEN c.market='h2h' THEN 0.15 ELSE 0.06 END) THEN 'flagged' ELSE 'paper' END AS tier, gr.result, gr.profit_units, gr.clv_prob
       FROM grades gr JOIN cards c ON c.id = gr.card_id)
     SELECT 'market' AS kind, market AS key, count(*)::int n, sum((result='win')::int)::int wins, sum((result='loss')::int)::int losses,
            sum((result='push')::int)::int pushes, coalesce(sum(profit_units),0)::float units, avg(clv_prob)::float clv FROM g GROUP BY market
