@@ -67,14 +67,17 @@ def main(argv=None):
         ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
     elif a.job == "weekly":       # Tuesday: refresh data, snapshot open, features, score
         ingest.ingest_schedule(list(range(2009, _cur() + 1))); ingest.ingest_pbp([_cur()]); ingest.ingest_weekly_stats([_cur()])
-        ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
+        # full injury history (2016+) is a model input (v2); idempotent, ~55k rows
+        ingest.ingest_injuries(list(range(2016, _cur() + 1))); ingest.ingest_rosters(); ingest.ingest_injuries_espn()
+        ingest.ingest_depth_charts(); ingest.ingest_snaps()
         ingest.ingest_odds("tue_open", tuple(a.markets))
         ingest.ingest_weather()
         from .features.build import build_features
         from .scoring.cards import score_week
         from .scoring.moneyline_cards import score_moneylines
         from .models.moneyline import train as train_ml
-        build_features(); train_ml(); score_week(); score_moneylines()
+        from .models.passing_yards import train as train_py
+        build_features(); train_ml(); train_py(); score_week(); score_moneylines()
     elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
         ingest.ingest_injuries(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_weather()
         ingest.ingest_odds("sun_am", tuple(a.markets))

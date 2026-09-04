@@ -90,10 +90,11 @@ class PassingYardsModel:
         self.z_emp = np.sort(z_emp) if z_emp is not None else None   # standardised OOF residuals (v2)
 
     def _zq(self, p):
-        return norm.ppf(p) if self.z_emp is None else np.quantile(self.z_emp, p)
+        z = getattr(self, "z_emp", None)   # v1 pickles have no z_emp → Normal
+        return norm.ppf(p) if z is None else np.quantile(z, p)
 
     def _zcdf(self, z):
-        if self.z_emp is None:
+        if getattr(self, "z_emp", None) is None:
             return norm.cdf(z)
         # smoothed ECDF: linear interpolation between order statistics
         n = len(self.z_emp)

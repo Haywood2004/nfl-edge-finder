@@ -18,7 +18,7 @@ ESPN_ABBR = {"WSH": "WAS", "LAR": "LA", "JAX": "JAX"}
 
 
 def fetch_injuries(timeout: int = 30) -> list[dict]:
-    r = requests.get(URL, timeout=timeout, headers={"User-Agent": "nfl-edge-finder/1.0"})
+    r = requests.get(URL, timeout=timeout, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36", "Accept": "application/json"})
     r.raise_for_status()
     return parse_injuries(r.json())
 
