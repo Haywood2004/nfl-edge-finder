@@ -1,4 +1,4 @@
-import { latestCards, latestGameProjections, rawMoneylineCards } from "@/lib/queries";
+import { latestCards, latestGameProjections } from "@/lib/queries";
 import { GameTile, GameLegend } from "@/components/GameTile";
 import { Feed } from "@/components/Feed";
 import { Freshness } from "@/components/Freshness";
@@ -17,7 +17,7 @@ export default async function Board() {
         </div>
         <Freshness />
       </div>
-      <Feed cards={cards} rawMl={rawMoneylineCards(games)} showAll />
+      <Feed cards={cards} showAll />
       <section className="mt-8">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold">All games · moneyline</h2>

@@ -4,8 +4,7 @@ import type { Card } from "@/lib/queries";
 import { CardItem } from "./CardItem";
 import { book, MARKET_NAMES } from "@/lib/format";
 
-export function Feed({ cards, rawMl = [], showAll }: { cards: Card[]; rawMl?: Card[]; showAll: boolean }) {
-  const [basis, setBasis] = useState<"blend" | "raw">("blend");
+export function Feed({ cards, showAll }: { cards: Card[]; showAll: boolean }) {
   const [market, setMarket] = useState("");
   const [team, setTeam] = useState("");
   const [bk, setBk] = useState("");
@@ -17,8 +16,7 @@ export function Feed({ cards, rawMl = [], showAll }: { cards: Card[]; rawMl?: Ca
   const teams = useMemo(() => [...new Set(cards.flatMap((c) => [c.team, c.opponent]))].sort(), [cards]);
   const books = useMemo(() => [...new Set(cards.map((c) => c.book))].sort(), [cards]);
 
-  const pool = basis === "raw" ? [...cards.filter((c) => c.market !== "h2h"), ...rawMl] : cards;
-  const list = pool
+  const list = cards
     .filter((c) => (!market || c.market === market) && (!team || c.team === team || c.opponent === team) && (!bk || c.book === bk))
     .filter((c) => Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
     .sort((a, b) =>
@@ -49,14 +47,6 @@ export function Feed({ cards, rawMl = [], showAll }: { cards: Card[]; rawMl?: Ca
         <label className="flex items-center gap-1 text-muted">Min conf
           <input type="number" className={`${sel} w-16`} value={minConf} min={0} max={100} onChange={(e) => setMinConf(+e.target.value)} />
         </label>
-        {rawMl.length > 0 && (
-          <label className="flex items-center gap-1 text-muted" title="Blended = what the pipeline publishes (95% toward the market). Raw = the un-anchored ratings model's own opinion — historically unprofitable vs closing lines, shown for transparency.">ML basis
-            <select className={sel} value={basis} onChange={(e) => setBasis(e.target.value as "blend" | "raw")}>
-              <option value="blend">Blended (published)</option>
-              <option value="raw">Raw ratings model</option>
-            </select>
-          </label>
-        )}
         <select className={`${sel} ml-auto`} value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
           <option value="score">Sort: edge × confidence</option>
           <option value="edge">Sort: edge</option>
@@ -71,7 +61,7 @@ export function Feed({ cards, rawMl = [], showAll }: { cards: Card[]; rawMl?: Ca
       ) : (
         <div className="grid gap-3 md:grid-cols-2">{list.map((c) => <CardItem key={c.id} c={c} />)}</div>
       )}
-      <p className="mt-3 text-xs text-muted">{list.length} of {pool.length} cards shown.{basis === "raw" && " Raw-basis moneyline cards are the model's un-anchored opinion, not published picks — the ratings model alone loses against closing lines (see Methodology)."}</p>
+      <p className="mt-3 text-xs text-muted">{list.length} of {cards.length} cards shown.</p>
     </div>
   );
 }

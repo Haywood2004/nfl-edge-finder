@@ -7,8 +7,12 @@ export function GameTile({ g }: { g: GameProjection }) {
   const pm = Number(g.p_home_model), pb = g.p_home_market == null ? null : Number(g.p_home_market);
   const pp = g.p_home_polymarket == null ? null : Number(g.p_home_polymarket);
   const used = Number(g.p_home_used);
-  const disagree = pb != null ? Math.abs(pm - pb) : 0;
+  void pm;
   const polyGap = pb != null && pp != null ? pp - pb : null;
+  // venue price gap: does the best price on either side beat OUR (blended) probability?
+  const gapHome = g.home_best ? used - 1 / g.home_best.dec : 0;
+  const gapAway = g.away_best ? (1 - used) - 1 / g.away_best.dec : 0;
+  const bestGap = Math.max(gapHome, gapAway);
   const fav = used >= 0.5 ? g.home_team : g.away_team;
   return (
     <Link href={`/games/${g.game_id}`} className="card card-hover block min-w-0 overflow-hidden p-4">
@@ -22,18 +26,18 @@ export function GameTile({ g }: { g: GameProjection }) {
       </div>
       <div className="relative mt-1.5 h-2.5 rounded-full bg-panel-3">
         <div className="absolute inset-y-0 left-0 rounded-l-full bg-cmodel/30" style={{ width: `${used * 100}%` }} />
-        <Marker p={pm} cls="bg-cmodel" title={`Model ${(pm * 100).toFixed(0)}%`} />
-        {pb != null && <Marker p={pb} cls="bg-cbooks" title={`Books ${(pb * 100).toFixed(0)}%`} />}
+        {pb != null && <Marker p={pb} cls="bg-cbooks" title={`Sportsbooks ${(pb * 100).toFixed(0)}%`} />}
         {pp != null && <Marker p={pp} cls="bg-cpoly" title={`Polymarket ${(pp * 100).toFixed(0)}%`} />}
+        <Marker p={used} cls="bg-cmodel" title={`Our number ${(used * 100).toFixed(0)}%`} />
         <div className="absolute top-[-3px] left-1/2 h-4 w-[1px] bg-muted/40" />
       </div>
       <div className="mt-2 flex items-center justify-between text-[12px] tnum text-muted">
         <span>{g.away_best ? <><span className="text-fg-2">{american(g.away_best.american)}</span> {book(g.away_best.book)}</> : "–"}</span>
         <span>{g.home_best ? <><span className="text-fg-2">{american(g.home_best.american)}</span> {book(g.home_best.book)}</> : "–"}</span>
       </div>
-      {(disagree >= 0.08 || (polyGap != null && Math.abs(polyGap) >= 0.02)) && (
+      {(bestGap >= 0.02 || (polyGap != null && Math.abs(polyGap) >= 0.02)) && (
         <div className="mt-2.5 flex flex-wrap gap-1">
-          {disagree >= 0.08 && <span className="pill pill-warn">model ≠ market by {Math.round(disagree * 100)} pts</span>}
+          {bestGap >= 0.02 && <span className="pill pill-up">best price beats our number by {(bestGap * 100).toFixed(1)} pts on {gapHome >= gapAway ? g.home_team : g.away_team}</span>}
           {polyGap != null && Math.abs(polyGap) >= 0.02 && <span className="pill" style={{ color: "var(--c-poly)", borderColor: "color-mix(in srgb, var(--c-poly) 35%, transparent)", background: "color-mix(in srgb, var(--c-poly) 12%, transparent)" }}>Polymarket {polyGap > 0 ? "+" : ""}{Math.round(polyGap * 100)} pts on {polyGap > 0 ? g.home_team : g.away_team}</span>}
         </div>
       )}
@@ -48,10 +52,10 @@ function Marker({ p, cls, title }: { p: number; cls: string; title: string }) {
 export function GameLegend() {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted">
-      <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-full bg-cmodel" /> Ratings model</span>
+      <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-full bg-cmodel" /> Our number (bettable)</span>
       <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-full bg-cbooks" /> Sportsbooks (no-vig)</span>
       <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-full bg-cpoly" /> Polymarket</span>
-      <span className="text-dim">Bar = blended home win probability · centre = 50%</span>
+      <span className="text-dim">Home win probability · centre = 50% · a card appears when a venue pays more than our number implies</span>
     </div>
   );
 }

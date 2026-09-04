@@ -1,4 +1,4 @@
-import { latestCards, latestGameProjections, rawMoneylineCards } from "@/lib/queries";
+import { latestCards, latestGameProjections } from "@/lib/queries";
 import { KellyTable } from "@/components/KellyTable";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export default async function KellyPage() {
           if the model&apos;s probability is exactly right — it never is, so the default is quarter-Kelly, capped at 3% per leg. The paper-bet feed and the Google Sheet use exactly these numbers.
         </p>
       </div>
-      <KellyTable cards={cards} rawMl={rawMoneylineCards(games)} />
+      <KellyTable cards={cards} />
     </div>
   );
 }

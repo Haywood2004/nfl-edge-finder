@@ -7,18 +7,16 @@ import { kellyFull, kellyStake, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PC
 
 const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half"], [0.25, "Quarter (default)"], [0.125, "Eighth"]] as const;
 
-export function KellyTable({ cards, rawMl }: { cards: Card[]; rawMl: Card[] }) {
+export function KellyTable({ cards }: { cards: Card[] }) {
   const [bankroll, setBankroll] = useState(DEFAULT_BANKROLL);
   const [fraction, setFraction] = useState<number>(DEFAULT_FRACTION);
   const [minEdge, setMinEdge] = useState(4);
   const [minConf, setMinConf] = useState(55);
-  const [basis, setBasis] = useState<"blend" | "raw">("blend");
   const [cap, setCap] = useState(MAX_STAKE_PCT * 100);
 
   const rows = useMemo(() => {
-    const pool = basis === "raw" ? [...cards.filter((c) => c.market !== "h2h"), ...rawMl] : cards;
-    return pool
-      .filter((c) => Number(c.edge) * 100 >= minEdge && (c.basis === "raw" || c.confidence >= minConf))
+    return cards
+      .filter((c) => Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
       .map((c) => {
         const p = Number(c.model_prob), dec = Number(c.price_decimal);
         const full = kellyFull(p, dec);
@@ -27,7 +25,7 @@ export function KellyTable({ cards, rawMl }: { cards: Card[]; rawMl: Card[] }) {
       })
       .filter((r) => r.full > 0)
       .sort((a, b) => b.stake - a.stake || b.full - a.full);
-  }, [cards, rawMl, basis, minEdge, minConf, fraction, bankroll, cap]);
+  }, [cards, minEdge, minConf, fraction, bankroll, cap]);
 
   const total = rows.reduce((s, r) => s + r.stake, 0);
   const expected = rows.reduce((s, r) => s + r.stake * r.ev, 0);
@@ -52,12 +50,6 @@ export function KellyTable({ cards, rawMl }: { cards: Card[]; rawMl: Card[] }) {
         <label className="flex flex-col gap-1 text-[12px] text-muted">Min confidence
           <input type="number" className={`${sel} w-20`} value={minConf} min={0} max={100} onChange={(e) => setMinConf(+e.target.value)} />
         </label>
-        <label className="flex flex-col gap-1 text-[12px] text-muted">Moneyline basis
-          <select className={sel} value={basis} onChange={(e) => setBasis(e.target.value as "blend" | "raw")}>
-            <option value="blend">Blended (published)</option>
-            <option value="raw">Raw ratings model</option>
-          </select>
-        </label>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -79,7 +71,6 @@ export function KellyTable({ cards, rawMl }: { cards: Card[]; rawMl: Card[] }) {
                   <td>
                     <Link href={c.href ?? `/cards/${c.id}`} className="font-medium hover:underline">{c.market === "h2h" ? `${c.team} to win` : `${c.player_name} ${c.side} ${Number(c.line)}`}</Link>
                     <span className="ml-1.5 text-muted">{MARKET_NAMES[c.market] ?? c.market}</span>
-                    {c.basis === "raw" && <span className="pill pill-warn ml-1.5">raw model</span>}
                     {c.published && <span className="pill pill-up ml-1.5">flagged</span>}
                   </td>
                   <td>{american(c.price_american)} <span className="text-muted">{book(c.book)}</span></td>

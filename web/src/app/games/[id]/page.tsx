@@ -15,10 +15,10 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   if (!g) notFound();
   const cards = await gameCards(id);
   const rows: [string, number | null, string][] = [
-    ["Ratings model", Number(g.p_home_model), "bg-cmodel"],
+    ["Our number (bettable)", Number(g.p_home_used), "bg-cmodel"],
     ["Sportsbooks (no-vig)", g.p_home_market == null ? null : Number(g.p_home_market), "bg-cbooks"],
     ["Polymarket", g.p_home_polymarket == null ? null : Number(g.p_home_polymarket), "bg-cpoly"],
-    ["Blend used", Number(g.p_home_used), "bg-fg"],
+    ["Ratings model alone (diagnostic — loses vs closing lines, not bettable)", Number(g.p_home_model), "bg-dim"],
   ];
   return (
     <div className="space-y-6">
@@ -31,7 +31,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
         <h2 className="eyebrow mb-3">Home win probability · {TEAM_NAMES[g.home_team]}</h2>
         <div className="space-y-2">
           {rows.map(([label, p, cls]) => (
-            <div key={label} className="grid grid-cols-[150px_1fr_56px] items-center gap-3 text-sm">
+            <div key={label} className="grid grid-cols-[1fr_56px] sm:grid-cols-[260px_1fr_56px] items-center gap-3 text-sm">
               <span className="text-muted">{label}</span>
               <div className="relative h-3 rounded-full bg-panel-2">
                 {p != null && <div className={`absolute inset-y-0 left-0 rounded-full ${cls}`} style={{ width: `${p * 100}%` }} />}
