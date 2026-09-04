@@ -29,3 +29,9 @@ What to look at:
 - [ ] Trends engine (`@trend` decorator, auto backtest), Trends page, "Model + Trend" badge.
 - [ ] CLV/calibration charts, Matchups page, Player page.
 - [ ] Alerts (Discord/email), spreads & totals as bettable markets.
+
+## 2026-09-04 — model v2 + redesign (demo notes)
+- Look at: `/how` (live model card from `model_runs`), home hero KPIs, prop tiles with injury/regime factors once ESPN feed is reachable.
+- Model v2 shipped: relative target + empirical residuals (calibration fixed), regime / script-neutral / injury / league-environment features, two-level market anchor. Weekly job now retrains passing yards every Tuesday.
+- Open: ESPN injuries endpoint returned 403 from GitHub Actions runners (now sent with a browser UA; if still blocked, fall back to nflverse-only and the card says "report not published"). Odds API key appears to be on the 500-credit tier (~400 left) — upgrade before the Sunday snapshots or reduce the snapshot schedule.
+- Next: refit MARKET_ANCHOR_W / LEVEL_ANCHOR_W from graded cards + CLV after ~6 weeks; receiving/rushing yards models (Milestone 2) reuse the v2 scaffolding; email capture / paid tier once the track record has a sample.
