@@ -24,11 +24,11 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
     <div className="space-y-6">
       <div>
         <Link href="/" className="text-xs text-muted hover:underline">← This week</Link>
-        <h1 className="mt-1 text-xl font-semibold">{TEAM_NAMES[g.away_team]} @ {TEAM_NAMES[g.home_team]}</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{TEAM_NAMES[g.away_team]} @ {TEAM_NAMES[g.home_team]}</h1>
         <p className="text-sm text-muted">{kickoff(g.kickoff_utc)} · Elo {g.away_team} {Number(g.elo_away).toFixed(0)} · {g.home_team} {Number(g.elo_home).toFixed(0)}</p>
       </div>
-      <section className="rounded-lg border border-border bg-panel p-4">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">Home win probability · {TEAM_NAMES[g.home_team]}</h2>
+      <section className="card p-4 sm:p-5">
+        <h2 className="eyebrow mb-3">Home win probability · {TEAM_NAMES[g.home_team]}</h2>
         <div className="space-y-2">
           {rows.map(([label, p, cls]) => (
             <div key={label} className="grid grid-cols-[150px_1fr_56px] items-center gap-3 text-sm">
@@ -43,12 +43,12 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
         </div>
         <div className="mt-3"><GameLegend /></div>
       </section>
-      <section className="rounded-lg border border-border bg-panel p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Why</h2>
+      <section className="card p-4 sm:p-5">
+        <h2 className="eyebrow mb-2">Why</h2>
         <FactorList factors={g.factors.map((f) => ({ ...f, impact: (f as { impact?: "+" | "−" | "▬" }).impact ?? "▬" }))} season={g.season} week={g.week} />
       </section>
-      <section className="rounded-lg border border-border bg-panel p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Moneyline prices vs the blend</h2>
+      <section className="card p-4 sm:p-5">
+        <h2 className="eyebrow mb-2">Moneyline prices vs the blend</h2>
         {cards.length === 0 ? <p className="text-sm text-muted">No venue is priced better than the blended probability right now.</p> : (
           <div className="space-y-2">
             {cards.map((c) => (

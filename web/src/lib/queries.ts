@@ -112,3 +112,29 @@ export async function gameCards(gameId: string) {
     SELECT c.*, g.home_team, g.away_team FROM cards c JOIN raw_games g USING (game_id) JOIN run ON c.created_at = run.ts
     WHERE c.game_id = ${gameId} AND c.market = 'h2h' ORDER BY c.edge DESC`;
 }
+
+export type ModelCard = {
+  id: number; market: string; version: string; trained_at: string; train_seasons: number[]; test_seasons: number[];
+  metrics: Record<string, unknown>; feature_names: string[];
+};
+/** Latest model run per market, for the methodology page's model card. */
+export async function modelCards() {
+  return sql<ModelCard[]>`
+    SELECT DISTINCT ON (market) id, market, version, trained_at, train_seasons, test_seasons, metrics, feature_names
+    FROM model_runs ORDER BY market, id DESC`;
+}
+
+/** Track record broken down by market, tier and week. */
+export async function trackBreakdown() {
+  return sql<{ kind: string; key: string; n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null }[]>`
+    WITH g AS (
+      SELECT c.market, c.week, CASE WHEN c.edge >= 0.15 THEN 'flagged' ELSE 'paper' END AS tier, gr.result, gr.profit_units, gr.clv_prob
+      FROM grades gr JOIN cards c ON c.id = gr.card_id)
+    SELECT 'market' AS kind, market AS key, count(*)::int n, sum((result='win')::int)::int wins, sum((result='loss')::int)::int losses,
+           sum((result='push')::int)::int pushes, coalesce(sum(profit_units),0)::float units, avg(clv_prob)::float clv FROM g GROUP BY market
+    UNION ALL
+    SELECT 'tier', tier, count(*)::int, sum((result='win')::int)::int, sum((result='loss')::int)::int, sum((result='push')::int)::int, coalesce(sum(profit_units),0)::float, avg(clv_prob)::float FROM g GROUP BY tier
+    UNION ALL
+    SELECT 'week', week::text, count(*)::int, sum((result='win')::int)::int, sum((result='loss')::int)::int, sum((result='push')::int)::int, coalesce(sum(profit_units),0)::float, avg(clv_prob)::float FROM g GROUP BY week
+    ORDER BY 1, 2`;
+}

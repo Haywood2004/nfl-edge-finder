@@ -23,25 +23,26 @@ export default async function DefensePage({ searchParams }: { searchParams: Prom
   const hl = sp.team;
   return (
     <div>
-      <h1 className="text-xl font-semibold">Pass defense · {season} Week {week}</h1>
+      <p className="eyebrow">Rankings</p>
+      <h1 className="mt-1 text-2xl font-semibold tracking-tight">Pass defense · {season} Week {week}</h1>
       <p className="mb-3 text-sm text-muted">
         Point-in-time: built from games before Week {week}{rows[0] && Number(rows[0].games) === 0 ? " — no current-season games yet, so this is last season shrunk 50% toward league average" : ""}.
         Rank 1 = fewest allowed. Derived from nflverse play-by-play; sacks excluded from passing yards (gross), matching public tables.
       </p>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-sm tnum">
-          <thead className="bg-panel text-left text-xs text-muted">
-            <tr><th className="px-2 py-2">Team</th><th>G</th>{COLS.map(([, r, l]) => <th key={r} id={r} className="px-2">{l}</th>)}<th className="px-2">Sack%</th></tr>
+      <div className="card overflow-x-auto">
+        <table className="data text-sm">
+          <thead>
+            <tr><th>Team</th><th>G</th>{COLS.map(([, r, l]) => <th key={r} id={r}>{l}</th>)}<th>Sack%</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.team} className={`border-t border-border/60 ${r.team === hl ? "bg-accent/10" : ""}`}>
-                <td className="px-2 py-1.5"><span className="font-medium">{r.team}</span> <span className="text-muted">{TEAM_NAMES[r.team]}</span></td>
+              <tr key={r.team} className={r.team === hl ? "bg-accent/10" : ""}>
+                <td><span className="font-medium">{r.team}</span> <span className="text-muted">{TEAM_NAMES[r.team]}</span></td>
                 <td>{r.games}</td>
                 {COLS.map(([v, rk]) => (
-                  <td key={v} className="px-2">{num(r[v], v.includes("epa") || v.includes("dropback") ? 2 : 1)} <span className="text-xs text-muted">#{r[rk]}</span></td>
+                  <td key={v}>{num(r[v], v.includes("epa") || v.includes("dropback") ? 2 : 1)} <span className="text-xs text-muted">#{r[rk]}</span></td>
                 ))}
-                <td className="px-2">{num(Number(r.sack_rate) * 100, 1)}%</td>
+                <td>{num(Number(r.sack_rate) * 100, 1)}%</td>
               </tr>
             ))}
           </tbody>

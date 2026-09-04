@@ -122,6 +122,36 @@ def build_factors(X: dict, mean: float, used_mean: float, sd: float, line: float
                   "text": "No current-season defensive data yet; opponent profile is last season's, shrunk 50% toward league average",
                   "source": {"table": "feat_team_defense", "team": opponent, "key": "games"}})
 
+    # 5b. context v2: coaching regime, own-side injuries, opponent-side injuries
+    if g("new_hc") == 1:
+        F.append({"factor": "new_coaching_staff", "value": 1, "impact_over": 0, "magnitude": 0.35,
+                  "text": "New head coach this season — last year's pass rate, pace and formation tendencies were replaced "
+                          "with league-average priors until this staff has a sample",
+                  "source": {"table": "raw_games", "key": "home_coach/away_coach"}})
+    if g("injury_report_seen") == 1:
+        tso = g("target_share_out") or 0
+        if g("wr1_out") == 1:
+            F.append({"factor": "injury_redistribution", "value": round(tso, 3), "impact_over": -1, "magnitude": min(tso / 0.25, 1) * 0.6,
+                      "text": f"Top target is OUT — receivers ruled out held {tso:.0%} of this team's prior targets; "
+                              "passing volume historically drops when the WR1 is missing",
+                      "source": {"table": "raw_injuries", "team": team, "key": "report_status"}})
+        elif tso >= 0.08:
+            F.append({"factor": "injury_redistribution", "value": round(tso, 3), "impact_over": -1, "magnitude": min(tso / 0.25, 1) * 0.4,
+                      "text": f"Receivers ruled out held {tso:.0%} of this team's prior targets ({int(g('skill_out') or 0)} skill players out)",
+                      "source": {"table": "raw_injuries", "team": team, "key": "report_status"}})
+        if (g("ol_out") or 0) >= 2:
+            F.append({"factor": "ol_injuries", "value": int(g("ol_out")), "impact_over": -1, "magnitude": 0.3,
+                      "text": f"{int(g('ol_out'))} offensive linemen ruled out — pressure and sack risk up, depth of target down",
+                      "source": {"table": "raw_injuries", "team": team, "key": "position"}})
+        if (g("opp_db_out") or 0) >= 2:
+            F.append({"factor": "opp_secondary_injuries", "value": int(g("opp_db_out")), "impact_over": +1, "magnitude": min(g("opp_db_out") / 3, 1) * 0.5,
+                      "text": f"{TEAM_NAMES.get(opponent, opponent)} have {int(g('opp_db_out'))} defensive backs ruled out",
+                      "source": {"table": "raw_injuries", "team": opponent, "key": "position"}})
+        if (g("opp_front_out") or 0) >= 2:
+            F.append({"factor": "opp_front_injuries", "value": int(g("opp_front_out")), "impact_over": +1, "magnitude": 0.25,
+                      "text": f"{TEAM_NAMES.get(opponent, opponent)} have {int(g('opp_front_out'))} front-seven players ruled out — less pass rush",
+                      "source": {"table": "raw_injuries", "team": opponent, "key": "position"}})
+
     # 6. weather
     dome = g("dome") == 1
     if dome:

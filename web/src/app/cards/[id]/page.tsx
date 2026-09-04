@@ -33,7 +33,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
         <Link href="/" className="text-xs text-muted hover:underline">← This week</Link>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
           <span className="rounded bg-panel-2 px-1.5 py-0.5 text-xs text-muted">{c.position}</span>
-          <h1 className="text-xl font-semibold">
+          <h1 className="text-2xl font-semibold tracking-tight">
             {c.player_name} · {MARKET_NAMES[c.market] ?? c.market} <span className={sideCls}>{c.side.toUpperCase()} {line}</span>
           </h1>
           <span className="text-sm text-muted tnum">{american(c.price_american)} {book(c.book)} (best)</span>
@@ -41,15 +41,15 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
         <p className="text-sm text-muted">{matchup} · {kickoff(c.kickoff_utc)} · {c.published ? "Published pick" : "Below publish threshold"} · scored {new Date(c.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })} ET</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-center text-sm tnum sm:grid-cols-5">
+      <div className="grid grid-cols-3 gap-2 text-center text-sm tnum sm:grid-cols-5">
         {[["Edge", signedPct(Number(c.edge))], ["Model", pct(Number(c.model_prob), 1)], ["Market (no-vig)", pct(Number(c.market_prob), 1)],
           ["Confidence", String(c.confidence)], ["EV / $1", `${num(Number(c.ev_per_unit) * 100, 1)}¢`]].map(([l, v]) => (
-          <div key={l} className="rounded border border-border bg-panel px-2 py-2"><div className="text-[11px] uppercase text-muted">{l}</div><div className="font-semibold">{v}</div></div>
+          <div key={l} className="card px-2 py-2.5"><div className="kpi-label">{l}</div><div className="font-semibold">{v}</div></div>
         ))}
       </div>
 
-      <section className="rounded-lg border border-border bg-panel p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Projection</h2>
+      <section className="card p-4 sm:p-5">
+        <h2 className="eyebrow mb-2">Projection</h2>
         {proj && <DistChart mean={usedMean} sd={Number(proj.sd)} line={line} side={c.side} />}
         {proj && (
           <p className="mt-1 text-xs text-muted tnum">
@@ -58,14 +58,14 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
         )}
       </section>
 
-      <section className="rounded-lg border border-border bg-panel p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Why</h2>
+      <section className="card p-4 sm:p-5">
+        <h2 className="eyebrow mb-2">Why</h2>
         <FactorList factors={c.factors} season={c.season} week={c.week} />
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-lg border border-border bg-panel p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Book by book</h2>
+        <section className="card p-4 sm:p-5">
+          <h2 className="eyebrow mb-2">Book by book</h2>
           <table className="w-full text-sm tnum">
             <thead className="text-left text-xs text-muted"><tr><th>Book</th><th>Line</th><th>Over</th><th>Under</th></tr></thead>
             <tbody>
@@ -77,8 +77,8 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
             </tbody>
           </table>
         </section>
-        <section className="rounded-lg border border-border bg-panel p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Line movement</h2>
+        <section className="card p-4 sm:p-5">
+          <h2 className="eyebrow mb-2">Line movement</h2>
           {bySnap.size === 0 ? <p className="text-sm text-muted">No snapshots yet.</p> : (
             <table className="w-full text-sm tnum">
               <thead className="text-left text-xs text-muted"><tr><th>Snapshot</th><th>Taken (ET)</th><th>Consensus line</th><th>Range</th></tr></thead>
@@ -99,8 +99,8 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-lg border border-border bg-panel p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">{c.player_name} — last {log.length} starts vs {line}</h2>
+        <section className="card p-4 sm:p-5">
+          <h2 className="eyebrow mb-2">{c.player_name} — last {log.length} starts vs {line}</h2>
           <p className="mb-2 text-xs text-muted">Over in {hits} of {log.length}. Source: nflverse weekly stats.</p>
           <table className="w-full text-sm tnum">
             <thead className="text-left text-xs text-muted"><tr><th>Wk</th><th>Opp</th><th>Att</th><th>Yds</th><th>TD</th></tr></thead>
@@ -113,8 +113,8 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
             </tbody>
           </table>
         </section>
-        <section className="rounded-lg border border-border bg-panel p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">{TEAM_NAMES[c.opponent]} — last {oppLog.length} QBs faced</h2>
+        <section className="card p-4 sm:p-5">
+          <h2 className="eyebrow mb-2">{TEAM_NAMES[c.opponent]} — last {oppLog.length} QBs faced</h2>
           <p className="mb-2 text-xs text-muted">Passing yards allowed to the opposing starter. <Link href={`/rankings/defense?season=${c.season}&week=${c.week}&team=${c.opponent}`} className="text-accent">Full ranking ↗</Link></p>
           <table className="w-full text-sm tnum">
             <thead className="text-left text-xs text-muted"><tr><th>Wk</th><th>QB</th><th>Yds</th></tr></thead>
@@ -127,8 +127,8 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
         </section>
       </div>
 
-      <section className="rounded-lg border border-border bg-panel p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">Injury report · {c.team} & {c.opponent}</h2>
+      <section className="card p-4 sm:p-5">
+        <h2 className="eyebrow mb-2">Injury report · {c.team} & {c.opponent}</h2>
         {inj.length === 0 ? <p className="text-sm text-muted">Official report not yet published for this week (confidence is reduced until it is).</p> : (
           <ul className="grid gap-1 text-sm sm:grid-cols-2">
             {inj.map((r, i) => <li key={i}><span className="text-muted">{r.team}</span> {r.full_name} ({r.position}) — {r.report_status ?? r.practice_status}{r.report_primary_injury ? `, ${r.report_primary_injury}` : ""}</li>)}

@@ -13,7 +13,7 @@ import re
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W
+from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W
 from ..ingest.odds_jobs import target_week
 from ..models.passing_yards import load_latest, MARKET
 from ..sources.odds_api import american
@@ -76,6 +76,15 @@ def score_week(week: int | None = None) -> int:
         weather = {g: {k: (None if pd.isna(v) else v) for k, v in row.items()} for g, row in wdf.to_dict("index").items()}
         injury_data_available = bool(len(injuries))
 
+        # league-level anchor: the median gap between posted lines and raw projections across every QB
+        # this week is an *environment* disagreement (books price the season's passing level with
+        # information the model lacks in Week 1-3), not a matchup one. Shift all projections by
+        # LEVEL_ANCHOR_W of that gap, then apply the per-player anchor. Both are logged as a factor.
+        cons = lines.groupby(["nname", "game_id"]).line.median().rename("cons_line").reset_index()
+        gap = feats.merge(cons, on=["nname", "game_id"], how="inner")
+        level_shift = float(LEVEL_ANCHOR_W * np.median(gap.cons_line - gap["mean"])) if len(gap) >= 8 else 0.0
+        print(f"[score] level anchor: median line−model gap {np.median(gap.cons_line - gap['mean']) if len(gap) else 0:+.1f} → shift {level_shift:+.1f}")
+
         proj_rows, card_rows = [], []
         n_unmatched = 0
         for _, f in feats.iterrows():
@@ -98,7 +107,7 @@ def score_week(week: int | None = None) -> int:
             if not books:
                 continue
             consensus_line = float(np.median([b["line"] for b in books]))
-            raw_mean = float(f["mean"])
+            raw_mean = float(f["mean"]) + level_shift
             used_mean = (1 - MARKET_ANCHOR_W) * raw_mean + MARKET_ANCHOR_W * consensus_line
             open_line = None
             if len(open_lines):

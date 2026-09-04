@@ -4,47 +4,49 @@ import { american, book, kickoff, MARKET_NAMES, num, pct, signedPct } from "@/li
 import { FactorList } from "./FactorList";
 
 export function CardItem({ c }: { c: Card }) {
-  const sideCls = c.side === "Over" ? "text-up" : "text-down";
+  const over = c.side === "Over";
   const matchup = c.team === c.home_team ? `${c.opponent} @ ${c.team}` : `${c.team} @ ${c.opponent}`;
   const proj = c.factors.find((f) => f.factor === "projection");
+  const isMl = c.market === "h2h";
   return (
-    <article className={`rounded-lg border bg-panel p-4 ${c.published ? "border-border" : "border-border/60 opacity-90"}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="rounded bg-panel-2 px-1.5 py-0.5 text-xs font-medium text-muted">{c.position}</span>
-        <h3 className="text-base font-semibold">
-          {MARKET_NAMES[c.market] ?? c.market} <span className={sideCls}>{c.side.toUpperCase()} {Number(c.line)}</span>
+    <article className={`card p-4 sm:p-5 ${c.published ? "ring-1 ring-up/30" : ""}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        <span className="rounded-md bg-panel-2 px-1.5 py-0.5 text-[11px] font-semibold tracking-wider text-muted">{c.position}</span>
+        <h3 className="text-[15px] font-semibold tracking-tight">
+          <Link href={`/cards/${c.id}`} className="hover:underline">{isMl ? c.team : c.player_name}</Link>
         </h3>
-        <span className="text-sm text-muted tnum">({american(c.price_american)} {book(c.book)}, best)</span>
-        {!c.published && <span className="ml-auto rounded border border-warn/40 px-1.5 py-0.5 text-[11px] text-warn">below threshold</span>}
-        {c.published && c.trend_badges?.length > 0 && <span className="ml-auto rounded bg-accent/20 px-1.5 py-0.5 text-[11px] text-accent">Model + Trend</span>}
+        <span className="text-[13px] text-muted">{MARKET_NAMES[c.market] ?? c.market}</span>
+        <span className={`pill ${over ? "pill-up" : isMl ? "pill-accent" : "pill-down"}`}>{isMl ? "TO WIN" : `${c.side.toUpperCase()} ${Number(c.line)}`}</span>
+        <span className="ml-auto text-[12px]">
+          {c.published ? <span className="pill pill-up">Flagged</span> : <span className="pill">paper · below bar</span>}
+          {c.published && c.trend_badges?.length > 0 && <span className="pill pill-accent ml-1">Model + Trend</span>}
+        </span>
       </div>
-      <p className="mt-0.5 text-sm text-muted">
-        <Link href={`/cards/${c.id}`} className="text-fg hover:underline">{c.player_name}</Link> · {matchup} · {kickoff(c.kickoff_utc)}
-      </p>
-      <div className="mt-3 grid grid-cols-4 gap-2 text-center text-sm tnum">
-        <Stat label="Edge" value={signedPct(Number(c.edge))} strong />
+      <p className="mt-1 text-[12px] text-muted">{matchup} · {kickoff(c.kickoff_utc)} · best price <span className="text-fg-2 tnum">{american(c.price_american)}</span> {book(c.book)}</p>
+      <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
+        <Stat label="Edge" value={signedPct(Number(c.edge))} strong up={Number(c.edge) >= 0.15} />
         <Stat label="Model" value={pct(Number(c.model_prob))} />
         <Stat label="Market" value={pct(Number(c.market_prob))} />
-        <Stat label="Confidence" value={String(c.confidence)} />
+        <Stat label="Conf" value={String(c.confidence)} />
       </div>
-      {proj && <p className="mt-2 text-xs text-muted">{proj.text}</p>}
-      <div className="mt-3">
-        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">Why</p>
+      {proj && <p className="mt-2 text-[12px] text-muted">{proj.text}</p>}
+      <div className="mt-3 border-t border-border/60 pt-3">
+        <p className="eyebrow mb-1.5">Why</p>
         <FactorList factors={c.factors.filter((f) => f.factor !== "projection")} season={c.season} week={c.week} limit={5} />
       </div>
-      <div className="mt-3 flex items-center justify-between text-xs text-muted">
-        <span>EV {num(Number(c.ev_per_unit) * 100, 1)}¢ per $1 · {c.book_prices.length} books</span>
+      <div className="mt-3 flex items-center justify-between text-[12px] text-muted">
+        <span>EV {num(Number(c.ev_per_unit) * 100, 1)}¢ per $1 · {c.book_prices.length} venues</span>
         <Link href={`/cards/${c.id}`} className="text-accent hover:underline">Full detail →</Link>
       </div>
     </article>
   );
 }
 
-function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Stat({ label, value, strong, up }: { label: string; value: string; strong?: boolean; up?: boolean }) {
   return (
-    <div className="rounded bg-panel-2 px-2 py-1.5">
-      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
-      <div className={strong ? "font-semibold" : ""}>{value}</div>
+    <div className="rounded-lg bg-panel-2/70 px-2 py-1.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-dim">{label}</div>
+      <div className={`text-[14px] tnum ${strong ? "font-semibold" : ""} ${up ? "text-up" : ""}`}>{value}</div>
     </div>
   );
 }

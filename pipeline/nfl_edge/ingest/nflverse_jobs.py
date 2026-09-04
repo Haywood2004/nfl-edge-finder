@@ -24,7 +24,8 @@ def seasons_through_current(first: int = FIRST_TRAIN_SEASON) -> list[int]:
 GAME_COLS = ["game_id", "season", "game_type", "week", "gameday", "weekday", "gametime", "away_team", "home_team", "location",
              "away_score", "home_score", "result", "total", "overtime", "away_rest", "home_rest", "away_moneyline",
              "home_moneyline", "spread_line", "total_line", "div_game", "roof", "surface", "temp", "wind",
-             "away_qb_id", "home_qb_id", "away_qb_name", "home_qb_name", "stadium_id", "stadium"]
+             "away_qb_id", "home_qb_id", "away_qb_name", "home_qb_name", "stadium_id", "stadium",
+             "away_coach", "home_coach"]
 
 
 def ingest_schedule(seasons: list[int] | None = None) -> int:
@@ -130,6 +131,9 @@ def ingest_injuries(seasons: list[int] | None = None) -> int:
             except nflverse.NotAvailable as e:
                 print(f"[injuries] {e}")
                 continue
+            if "season_type" not in i.columns:  # older release files name it game_type
+                i = i.rename(columns={"game_type": "season_type"})
+            i = i[i.gsis_id.notna()]
             i = i[["season", "week", "season_type", "team", "gsis_id", "full_name", "position",
                    "report_primary_injury", "report_status", "practice_primary_injury", "practice_status"]].copy()
             i["team"] = i["team"].map(norm)
@@ -142,6 +146,51 @@ def ingest_injuries(seasons: list[int] | None = None) -> int:
             total += n
         run.rows = total
     return total
+
+
+# ---------------------------------------------------------------- ESPN injuries (same-day supplement)
+def ingest_injuries_espn(season: int | None = None, week: int | None = None) -> int:
+    """Append the current ESPN injury report as source='espn' rows for the target week.
+
+    nflverse injury files lag (the current season's file appears a few weeks in) and are nightly;
+    ESPN is live. Rows are append-only: a status change creates a new row, the UNIQUE constraint
+    makes unchanged re-runs no-ops. ESPN athlete ids are mapped to gsis_id through raw_rosters.espn_id.
+    """
+    from ..sources.espn import fetch_injuries
+    from ..ingest.odds_jobs import target_week
+    if season is None or week is None:
+        season, week = target_week()
+    with db.JobRun("ingest_injuries_espn") as run:
+        try:
+            rows = fetch_injuries()
+        except Exception as e:  # graceful: ESPN down → injury factor is "unavailable", never a crash
+            print(f"[espn] unavailable: {e}")
+            run.detail["error"] = str(e)[:200]
+            return 0
+        if not rows:
+            return 0
+        i = pd.DataFrame(rows)
+        ros = db.read_sql("SELECT espn_id, gsis_id, full_name FROM raw_rosters WHERE season=:s AND espn_id IS NOT NULL", {"s": season})
+        if ros.empty:
+            ros = db.read_sql("SELECT espn_id, gsis_id, full_name FROM raw_rosters WHERE season=:s AND espn_id IS NOT NULL", {"s": season - 1})
+        i = i.merge(ros[["espn_id", "gsis_id"]], on="espn_id", how="left")
+        # fallback: exact name match within the season roster
+        byname = ros.drop_duplicates("full_name").set_index("full_name").gsis_id
+        i["gsis_id"] = i.gsis_id.fillna(i.full_name.map(byname))
+        unmapped = int(i.gsis_id.isna().sum())
+        i = i[i.gsis_id.notna()].copy()
+        i["season"], i["week"], i["season_type"], i["source"] = season, week, "REG", "espn"
+        i["team"] = i.team.map(norm)
+        i["practice_primary_injury"], i["practice_status"] = None, ""   # "" not NULL: NULLs never collide in the UNIQUE key
+        i = i.drop_duplicates(["team", "gsis_id", "report_status"])
+        cols = ["season", "week", "season_type", "team", "gsis_id", "full_name", "position",
+                "report_primary_injury", "report_status", "practice_primary_injury", "practice_status", "source"]
+        run.rows = db.upsert(i[cols], "raw_injuries",
+                             ["season", "week", "season_type", "team", "gsis_id", "report_status", "practice_status", "source"],
+                             update=False)
+        run.detail = {"fetched": len(rows), "unmapped": unmapped, "season": season, "week": week}
+        print(f"[espn] {run.rows} injury rows for {season} wk{week} ({unmapped} unmapped)")
+        return run.rows
 
 
 # ---------------------------------------------------------------- depth charts / rosters / snaps
@@ -179,7 +228,8 @@ def ingest_rosters(seasons: list[int] | None = None) -> int:
                 print(f"[rosters] {e}")
                 continue
             r = r[["season", "team", "gsis_id", "full_name", "position", "depth_chart_position", "status",
-                   "years_exp", "headshot_url"]].copy()
+                   "years_exp", "headshot_url", "espn_id"]].copy()
+            r["espn_id"] = r.espn_id.map(lambda v: str(int(v)) if pd.notna(v) and str(v).replace(".", "").isdigit() else None)
             r = r[r.gsis_id.notna()].drop_duplicates(["season", "gsis_id"])
             r["team"] = r["team"].map(norm)
             total += db.upsert(r, "raw_rosters", ["season", "gsis_id"])

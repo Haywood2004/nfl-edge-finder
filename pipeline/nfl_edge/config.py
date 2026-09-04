@@ -24,6 +24,7 @@ PUBLISH_MIN_CONFIDENCE = 55
 
 # Scoring blends the model mean toward the consensus line: mean_used = (1-w)*model + w*line.
 # Provisional (DECISIONS.md #7); refit once graded cards + CLV accumulate.
+LEVEL_ANCHOR_W = float(os.environ.get("LEVEL_ANCHOR_W", "0.5"))   # share of the league-wide line-vs-model gap applied to every projection
 MARKET_ANCHOR_W = 0.35
 
 US_BOOKS_REGION = "us"

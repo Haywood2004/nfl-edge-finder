@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS raw_games (
   ingested_at    timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS location text;
+ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS home_coach text;
+ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS away_coach text;
 CREATE INDEX IF NOT EXISTS raw_games_season_week ON raw_games(season, week);
 
 -- Curated column subset of nflverse pbp (full parquet kept in pipeline/.cache). See DECISIONS.md #4.
@@ -190,6 +192,7 @@ CREATE TABLE IF NOT EXISTS raw_rosters (
   headshot_url text,
   PRIMARY KEY (season, gsis_id)
 );
+ALTER TABLE raw_rosters ADD COLUMN IF NOT EXISTS espn_id text;   -- for mapping ESPN injury feed → gsis_id
 
 CREATE TABLE IF NOT EXISTS raw_snap_counts (
   game_id      text NOT NULL,
@@ -340,6 +343,10 @@ CREATE TABLE IF NOT EXISTS feat_team_offense (
   pass_yds_pg numeric,
   PRIMARY KEY (season, week, team)
 );
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS neutral_pass_rate numeric;   -- pass rate, Q1-3, score within 7
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS neutral_plays_pg numeric;
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS shotgun_rate numeric;
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS no_huddle_rate numeric;
 
 -- One row per (player, game) for the market being modeled. Wide table; nullable where unavailable.
 CREATE TABLE IF NOT EXISTS feat_player_game (

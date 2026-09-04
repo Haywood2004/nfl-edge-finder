@@ -25,7 +25,7 @@ export function Feed({ cards, showAll }: { cards: Card[]; showAll: boolean }) {
         : sort === "confidence" ? b.confidence - a.confidence
         : Number(b.score) - Number(a.score));
 
-  const sel = "rounded border border-border bg-panel px-2 py-1.5 text-sm";
+  const sel = "select";
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
@@ -55,7 +55,7 @@ export function Feed({ cards, showAll }: { cards: Card[]; showAll: boolean }) {
         </select>
       </div>
       {list.length === 0 ? (
-        <p className="rounded-lg border border-border bg-panel p-6 text-center text-sm text-muted">
+        <p className="card p-8 text-center text-sm text-muted">
           No cards match. Lower the thresholds, or check the <a href="/board" className="text-accent">full board</a>.
         </p>
       ) : (

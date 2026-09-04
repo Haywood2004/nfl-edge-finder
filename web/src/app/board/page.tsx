@@ -11,7 +11,8 @@ export default async function Board() {
     <div>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold">Full Board</h1>
+          <p className="eyebrow">Everything priced</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Full Board</h1>
           <p className="text-sm text-muted">Every player-side the model priced this week, including those below the publish threshold.</p>
         </div>
         <Freshness />
