@@ -13,7 +13,7 @@ def main(argv=None):
     p.add_argument("--week", type=int)
     p.add_argument("--label", default="manual")
     p.add_argument("--from-dir", help="replay recorded Odds API payloads from this directory")
-    p.add_argument("--markets", nargs="*", default=["player_pass_yds"])
+    p.add_argument("--markets", nargs="*", default=["player_pass_yds", "player_reception_yds", "player_rush_yds", "player_receptions"])
     p.add_argument("--max-events", type=int)
     a = p.parse_args(argv)
 
@@ -32,7 +32,7 @@ def main(argv=None):
             run(a.seasons or None, market=m)
     elif a.job == "train_props":      # receiving yards, receptions, rushing yards
         from .models.player_props import train as train_prop, SPECS
-        for m in (a.markets if a.markets != ["player_pass_yds"] else list(SPECS)):
+        for m in [x for x in a.markets if x in SPECS]:
             train_prop(m)
     elif a.job == "odds_history":   # historical closing lines for backtests (costs credits; see odds_history.py)
         from .ingest.odds_history import backfill_odds_history
@@ -51,7 +51,7 @@ def main(argv=None):
         ingest.ingest_odds(a.label, tuple(a.markets), week=a.week, from_dir=a.from_dir, max_events=a.max_events)
     elif a.job == "snapshot":     # cron: new odds snapshot, then rescore both markets against it
         ingest.ingest_odds(a.label, tuple(a.markets), week=a.week, from_dir=a.from_dir, max_events=a.max_events)
-        from .scoring.cards import score_week
+        from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
         score_week(a.week); score_moneylines(a.week)
     elif a.job == "build_features":
@@ -61,7 +61,7 @@ def main(argv=None):
         from .models.passing_yards import train
         train()
     elif a.job == "score":
-        from .scoring.cards import score_week
+        from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
         score_week(a.week); score_moneylines(a.week)
     elif a.job == "train_ml":
@@ -84,16 +84,20 @@ def main(argv=None):
         ingest.ingest_odds("tue_open", tuple(a.markets))
         ingest.ingest_weather()
         from .features.build import build_features
-        from .scoring.cards import score_week
+        from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
         from .models.moneyline import train as train_ml
         from .models.passing_yards import train as train_py
-        build_features(); train_ml(); train_py(); score_week(); score_moneylines()
+        from .models.player_props import train as train_prop, SPECS
+        build_features(); train_ml(); train_py()
+        for m in SPECS:
+            train_prop(m)
+        score_week(); score_moneylines()
     elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
         ingest.ingest_injuries(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_weather()
         ingest.ingest_odds("sun_am", tuple(a.markets))
         from .features.build import build_features
-        from .scoring.cards import score_week
+        from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
         build_features(); score_week(); score_moneylines()
     elif a.job == "bootstrap":    # first run from scratch
@@ -101,7 +105,7 @@ def main(argv=None):
         ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
         from .features.build import build_features
         from .models.passing_yards import train
-        from .scoring.cards import score_week
+        from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
         from .models.moneyline import train as train_ml
         build_features(); train(); train_ml()

@@ -47,19 +47,31 @@ export async function lineHistory(eventId: string, market: string, player: strin
     ORDER BY s.taken_at, l.bookmaker, l.side`;
 }
 
-export async function playerGameLog(playerId: string, n = 10) {
-  return sql`
-    SELECT season, week, team, opponent_team AS opponent, attempts, completions, passing_yards, passing_tds
-    FROM raw_weekly_stats WHERE player_id = ${playerId} AND season_type = 'REG' AND attempts >= 10
+/** Stat column + usage column per market, for game logs. */
+export const MARKET_STAT: Record<string, { stat: string; usage: string; usageLabel: string; statLabel: string }> = {
+  player_pass_yds: { stat: "passing_yards", usage: "attempts", usageLabel: "Att", statLabel: "Yds" },
+  player_reception_yds: { stat: "receiving_yards", usage: "targets", usageLabel: "Tgt", statLabel: "Yds" },
+  player_receptions: { stat: "receptions", usage: "targets", usageLabel: "Tgt", statLabel: "Rec" },
+  player_rush_yds: { stat: "rushing_yards", usage: "carries", usageLabel: "Car", statLabel: "Yds" },
+};
+
+export async function playerGameLog(playerId: string, market = "player_pass_yds", n = 10) {
+  const m = MARKET_STAT[market] ?? MARKET_STAT.player_pass_yds;
+  return sql<{ season: number; week: number; team: string; opponent: string; usage: number; stat: number }[]>`
+    SELECT season, week, team, opponent_team AS opponent, ${sql(m.usage)} AS usage, ${sql(m.stat)} AS stat
+    FROM raw_weekly_stats WHERE player_id = ${playerId} AND season_type = 'REG' AND ${sql(m.usage)} >= ${market === "player_pass_yds" ? 10 : 1}
     ORDER BY season DESC, week DESC LIMIT ${n}`;
 }
 
-export async function opponentLastGames(team: string, n = 10) {
-  return sql`
-    SELECT w.season, w.week, w.team AS offense, w.player_name, w.passing_yards
+/** What the opponent allowed to this position (top player per game) in its last n games. */
+export async function opponentLastGames(team: string, market = "player_pass_yds", position = "QB", n = 10) {
+  const m = MARKET_STAT[market] ?? MARKET_STAT.player_pass_yds;
+  const pos = market === "player_pass_yds" ? ["QB"] : market === "player_rush_yds" ? ["RB", "FB"] : [position === "TE" ? "TE" : position === "RB" || position === "FB" ? "RB" : "WR"];
+  return sql<{ season: number; week: number; offense: string; player_name: string; stat: number }[]>`
+    SELECT DISTINCT ON (w.season, w.week) w.season, w.week, w.team AS offense, w.player_name, ${sql(m.stat)} AS stat
     FROM raw_weekly_stats w
-    WHERE w.opponent_team = ${team} AND w.position = 'QB' AND w.season_type = 'REG' AND w.attempts >= 10
-    ORDER BY w.season DESC, w.week DESC LIMIT ${n}`;
+    WHERE w.opponent_team = ${team} AND w.position = ANY(${pos}) AND w.season_type = 'REG' AND ${sql(m.stat)} IS NOT NULL
+    ORDER BY w.season DESC, w.week DESC, ${sql(m.stat)} DESC LIMIT ${n}`;
 }
 
 export async function defenseTable(season: number, week: number) {

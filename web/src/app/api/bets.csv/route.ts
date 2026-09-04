@@ -25,7 +25,7 @@ export async function GET() {
     "model_prob", "market_prob", "edge", "confidence", "tier", "unit_size", "result", "actual", "clv", "kickoff_et", "card_id", "locked_at",
     "kelly_full_pct", "kelly_fraction", "bankroll_units"];
   const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const mk: Record<string, string> = { player_pass_yds: "Pass Yds", h2h: "Moneyline" };
+  const mk: Record<string, string> = { player_pass_yds: "Pass Yds", player_reception_yds: "Rec Yds", player_rush_yds: "Rush Yds", player_receptions: "Receptions", h2h: "Moneyline" };
   const lines = rows.map((r) => {
     const dec = Number(r.price_decimal), p = Number(r.model_prob);
     const bet = r.market === "h2h" ? `${r.player_name} ML` : `${r.player_name} ${r.side} ${r.line}`;

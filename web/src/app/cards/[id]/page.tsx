@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { cardById, projection, lineHistory, playerGameLog, opponentLastGames, teamInjuries } from "@/lib/queries";
+import { cardById, projection, lineHistory, playerGameLog, opponentLastGames, teamInjuries, MARKET_STAT } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, num, pct, signedPct, TEAM_NAMES } from "@/lib/format";
 import { FactorList } from "@/components/FactorList";
 import { DistChart } from "@/components/DistChart";
@@ -13,7 +13,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
   if (!c) notFound();
   const [proj, hist, log, oppLog, inj] = await Promise.all([
     projection(c.projection_id), lineHistory(c.event_id ?? "", c.market, c.player_name),
-    playerGameLog(c.player_id), opponentLastGames(c.opponent), teamInjuries(c.season, c.week, [c.team, c.opponent]),
+    playerGameLog(c.player_id, c.market), opponentLastGames(c.opponent, c.market, c.position), teamInjuries(c.season, c.week, [c.team, c.opponent]),
   ]);
   const usedMean = Number(c.factors.find((f) => f.factor === "projection")?.value ?? proj?.mean ?? 0);
   const sideCls = c.side === "Over" ? "text-up" : "text-down";
@@ -25,7 +25,9 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
     if (!bySnap.has(k)) bySnap.set(k, { taken_at: h.taken_at, label: h.label, lines: [] });
     if (h.side === "Over") bySnap.get(k)!.lines.push(Number(h.line));
   }
-  const hits = log.filter((g) => Number(g.passing_yards) > line).length;
+  const hits = log.filter((g) => Number(g.stat) > line).length;
+  const ms = MARKET_STAT[c.market] ?? MARKET_STAT.player_pass_yds;
+  const posLabel = c.market === "player_pass_yds" ? "QBs" : c.market === "player_rush_yds" ? "RBs" : c.position === "TE" ? "TEs" : c.position === "RB" ? "RBs" : "WRs";
 
   return (
     <div className="space-y-6">
@@ -100,27 +102,27 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="card p-4 sm:p-5">
-          <h2 className="eyebrow mb-2">{c.player_name} — last {log.length} starts vs {line}</h2>
+          <h2 className="eyebrow mb-2">{c.player_name} — last {log.length} games vs {line}</h2>
           <p className="mb-2 text-xs text-muted">Over in {hits} of {log.length}. Source: nflverse weekly stats.</p>
           <table className="w-full text-sm tnum">
-            <thead className="text-left text-xs text-muted"><tr><th>Wk</th><th>Opp</th><th>Att</th><th>Yds</th><th>TD</th></tr></thead>
+            <thead className="text-left text-xs text-muted"><tr><th>Wk</th><th>Opp</th><th>{ms.usageLabel}</th><th>{ms.statLabel}</th></tr></thead>
             <tbody>
               {log.map((g) => (
-                <tr key={`${g.season}-${g.week}`} className={Number(g.passing_yards) > line ? "text-up" : "text-down"}>
-                  <td className="py-0.5">{g.season} W{g.week}</td><td>{g.opponent}</td><td>{g.attempts}</td><td>{g.passing_yards}</td><td>{g.passing_tds}</td>
+                <tr key={`${g.season}-${g.week}`} className={Number(g.stat) > line ? "text-up" : "text-down"}>
+                  <td className="py-0.5">{g.season} W{g.week}</td><td>{g.opponent}</td><td>{g.usage}</td><td>{g.stat}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
         <section className="card p-4 sm:p-5">
-          <h2 className="eyebrow mb-2">{TEAM_NAMES[c.opponent]} — last {oppLog.length} QBs faced</h2>
-          <p className="mb-2 text-xs text-muted">Passing yards allowed to the opposing starter. <Link href={`/rankings/defense?season=${c.season}&week=${c.week}&team=${c.opponent}`} className="text-accent">Full ranking ↗</Link></p>
+          <h2 className="eyebrow mb-2">{TEAM_NAMES[c.opponent]} — last {oppLog.length} {posLabel} faced</h2>
+          <p className="mb-2 text-xs text-muted">{MARKET_NAMES[c.market] ?? c.market} allowed to the opponent&apos;s top {posLabel.slice(0, -1)} each game. <Link href={`/rankings/defense?season=${c.season}&week=${c.week}&team=${c.opponent}`} className="text-accent">Full ranking ↗</Link></p>
           <table className="w-full text-sm tnum">
-            <thead className="text-left text-xs text-muted"><tr><th>Wk</th><th>QB</th><th>Yds</th></tr></thead>
+            <thead className="text-left text-xs text-muted"><tr><th>Wk</th><th>Player</th><th>{ms.statLabel}</th></tr></thead>
             <tbody>
               {oppLog.map((g, i) => (
-                <tr key={i}><td className="py-0.5">{g.season} W{g.week}</td><td>{g.player_name} ({g.offense})</td><td className={Number(g.passing_yards) > line ? "text-up" : ""}>{g.passing_yards}</td></tr>
+                <tr key={i}><td className="py-0.5">{g.season} W{g.week}</td><td>{g.player_name} ({g.offense})</td><td className={Number(g.stat) > line ? "text-up" : ""}>{g.stat}</td></tr>
               ))}
             </tbody>
           </table>

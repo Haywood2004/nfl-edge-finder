@@ -15,9 +15,11 @@ import pandas as pd
 from .. import db
 from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE_PROPS as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W
 from ..ingest.odds_jobs import target_week
-from ..models.passing_yards import load_latest, MARKET
+from ..models.passing_yards import load_latest as load_latest_py, MARKET as PASS_MARKET
+from ..models.player_props import load_latest as load_latest_prop, SPECS
 from ..sources.odds_api import american
 from .factors import build_factors, confidence_score
+from .skill_factors import build_skill_factors, skill_confidence
 
 LEAGUE_IMPLIED = 22.0
 
@@ -28,36 +30,64 @@ def _norm_name(s: str) -> str:
     return " ".join(s.split())
 
 
-def _latest_snapshot(season, week):
+def _latest_snapshot(season, week, market):
     r = db.read_sql("""SELECT id, taken_at FROM odds_snapshots WHERE season=:s AND week=:w
-                       AND :m = ANY(markets) ORDER BY taken_at DESC LIMIT 1""", {"s": season, "w": week, "m": MARKET})
+                       AND :m = ANY(markets) ORDER BY taken_at DESC LIMIT 1""", {"s": season, "w": week, "m": market})
     return (int(r.id.iloc[0]), r.taken_at.iloc[0]) if len(r) else (None, None)
 
 
-def _open_snapshot(season, week):
+def _open_snapshot(season, week, market):
     r = db.read_sql("""SELECT id FROM odds_snapshots WHERE season=:s AND week=:w AND :m = ANY(markets)
-                       ORDER BY taken_at ASC LIMIT 1""", {"s": season, "w": week, "m": MARKET})
+                       ORDER BY taken_at ASC LIMIT 1""", {"s": season, "w": week, "m": market})
     return int(r.id.iloc[0]) if len(r) else None
 
 
-def score_week(week: int | None = None) -> int:
+def score_all(week: int | None = None) -> int:
+    """Score every prop market that has a trained model and a snapshot."""
+    total = 0
+    for m in [PASS_MARKET] + list(SPECS):
+        try:
+            total += score_week(week, m)
+        except RuntimeError as e:   # no model yet for a market → skip, never crash the run
+            print(f"[score:{m}] skipped: {e}")
+    return total
+
+
+def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
+    MARKET = market
     season, wk = target_week()
     wk = week or wk
-    model, run_id = load_latest()
-    snap_id, snap_at = _latest_snapshot(season, wk)
+    is_qb = market == PASS_MARKET
+    if is_qb:
+        model, run_id = load_latest_py()
+    else:
+        model, run_id = load_latest_prop(market)
+    spec = None if is_qb else SPECS[market]
+    snap_id, snap_at = _latest_snapshot(season, wk, MARKET)
     if snap_id is None:
-        print(f"[score] no odds snapshot for {season} wk{wk}; nothing to score")
+        print(f"[score:{market}] no odds snapshot for {season} wk{wk}; nothing to score")
         return 0
-    open_id = _open_snapshot(season, wk)
+    open_id = _open_snapshot(season, wk, MARKET)
 
-    with db.JobRun("score") as run:
-        feats = db.read_sql("""SELECT f.*, g.home_team, g.away_team FROM feat_player_game f
-                               JOIN raw_games g USING (game_id)
-                               WHERE f.season=:s AND f.week=:w AND f.target_passing_yards IS NULL""",
-                            {"s": season, "w": wk})
+    with db.JobRun(f"score:{market}") as run:
+        if is_qb:
+            feats = db.read_sql("""SELECT f.*, g.home_team, g.away_team FROM feat_player_game f
+                                   JOIN raw_games g USING (game_id)
+                                   WHERE f.season=:s AND f.week=:w AND f.position='QB' AND f.target_passing_yards IS NULL""",
+                                {"s": season, "w": wk})
+        else:
+            feats = db.read_sql("""SELECT f.*, g.home_team, g.away_team FROM feat_player_game f
+                                   JOIN raw_games g USING (game_id)
+                                   WHERE f.season=:s AND f.week=:w AND f.position = ANY(:p) AND f.target_targets IS NULL""",
+                                {"s": season, "w": wk, "p": list(spec.positions)})
         if feats.empty:
             print("[score] no target-week feature rows; run build_features"); return 0
         X = pd.DataFrame([json.loads(f) if isinstance(f, str) else f for f in feats.features]).astype(float)
+        if spec is not None:   # eligibility: same usage floor as training
+            ok = X[spec.min_usage].fillna(0) >= spec.min_usage_val
+            feats, X = feats[ok.values].reset_index(drop=True), X[ok.values].reset_index(drop=True)
+            if feats.empty:
+                print(f"[score:{market}] no eligible players"); return 0
         pred = model.predict(X)
         feats = pd.concat([feats.reset_index(drop=True), pred], axis=1)
         feats["nname"] = feats.player_name.map(_norm_name)
@@ -83,7 +113,7 @@ def score_week(week: int | None = None) -> int:
         cons = lines.groupby(["nname", "game_id"]).line.median().rename("cons_line").reset_index()
         gap = feats.merge(cons, on=["nname", "game_id"], how="inner")
         level_shift = float(LEVEL_ANCHOR_W * np.median(gap.cons_line - gap["mean"])) if len(gap) >= 8 else 0.0
-        print(f"[score] level anchor: median line−model gap {np.median(gap.cons_line - gap['mean']) if len(gap) else 0:+.1f} → shift {level_shift:+.1f}")
+        print(f"[score:{market}] level anchor: median line−model gap {np.median(gap.cons_line - gap['mean']) if len(gap) else 0:+.1f} → shift {level_shift:+.1f}")
 
         proj_rows, card_rows = [], []
         n_unmatched = 0
@@ -119,7 +149,7 @@ def score_week(week: int | None = None) -> int:
             factors_ctx = dict(X=X_row, mean=raw_mean, used_mean=used_mean, sd=float(f["sd"]), line=consensus_line,
                                open_line=open_line, weather=wx, injury=inj, injury_data_available=injury_data_available,
                                opponent=f.opponent, team=f.team, is_home=bool(f.is_home))
-            base_factors = build_factors(**factors_ctx)
+            base_factors = build_factors(**factors_ctx) if is_qb else build_skill_factors(market=market, position=f.position, **factors_ctx)
             proj_rows.append({
                 "model_run_id": run_id, "season": season, "week": wk, "game_id": f.game_id, "player_id": f.player_id,
                 "player_name": f.player_name, "team": f.team, "opponent": f.opponent, "market": MARKET,
@@ -144,11 +174,12 @@ def score_week(week: int | None = None) -> int:
                                            else "−" if x["impact_over"] * (1 if side == "Over" else -1) < 0 else "▬"))
                            for x in base_factors]
                 factors.sort(key=lambda x: -abs(x.get("magnitude", 0)))
-                conf = confidence_score(X_row, c, open_line, wx, inj, injury_data_available, len(books), side)
+                conf = (confidence_score(X_row, c, open_line, wx, inj, injury_data_available, len(books), side) if is_qb
+                        else skill_confidence(X_row, c, open_line, wx, inj, injury_data_available, len(books), side, market))
                 card_rows.append({
                     "season": season, "week": wk, "game_id": f.game_id,
                     "event_id": pl.event_id.iloc[0], "player_id": f.player_id, "player_name": f.player_name,
-                    "position": "QB", "team": f.team, "opponent": f.opponent, "kickoff_utc": f.kickoff_utc,
+                    "position": f.position, "team": f.team, "opponent": f.opponent, "kickoff_utc": f.kickoff_utc,
                     "market": MARKET, "side": side, "line": c["line"], "price_american": int(c["american"]),
                     "price_decimal": c["dec"], "book": c["book"], "snapshot_id": snap_id, "model_run_id": run_id,
                     "model_prob": c["model_prob"], "market_prob": c["market_prob"], "edge": c["edge"],
@@ -171,5 +202,5 @@ def score_week(week: int | None = None) -> int:
         run.rows = n
         run.detail = {"season": season, "week": wk, "snapshot_id": snap_id, "projections": len(ids),
                       "cards": n, "published": n_pub, "unmatched_players": n_unmatched}
-        print(f"[score] {season} wk{wk}: {len(ids)} projections, {n} cards, {n_pub} published, {n_unmatched} QBs without lines")
+        print(f"[score:{market}] {season} wk{wk}: {len(ids)} projections, {n} cards, {n_pub} published, {n_unmatched} players without lines")
         return n

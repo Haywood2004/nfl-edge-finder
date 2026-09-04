@@ -77,3 +77,180 @@ MAE 59.47 · coverage q25 0.245 / q75 0.717
 | opp_pass_yds_allowed_pg | 0.010 |
 
 All 74 features: dome, temp, wind, py_l3, py_l5, att_l3, att_l5, new_hc, ol_out, py_ewm, py_l10, att_ewm, is_home, wr1_out, ypa_ewm, ypa_l10, cpoe_ewm, div_game, new_team, week_num, games_std, opp_games, primetime, py_sd_l10, rest_days, skill_out, team_proe, opp_db_out, py_std_avg, team_games, total_line, air_yds_ewm, epa_att_ewm, spread_team, usage_trend, coach_tenure, games_career, league_py_l8, rush_yds_ewm, implied_total, league_att_l8, opp_front_out, opp_sack_rate, sack_rate_ewm, team_plays_pg, py_prev_season, team_pass_rate, days_since_last, target_share_out, team_pass_yds_pg, games_prev_season, team_epa_per_play, team_shotgun_rate, injury_report_seen, team_no_huddle_rate, opp_pass_epa_allowed, opp_rush_epa_allowed, team_pass_epa_per_db, league_py_prev_season, opp_sos_adj_pass_rank, opp_te_yds_allowed_pg, opp_wr_yds_allowed_pg, team_neutral_plays_pg, opp_dropbacks_faced_pg, team_neutral_pass_rate, opp_pass_yds_allowed_pg, opp_rush_yds_allowed_pg, opp_yac_per_comp_allowed, opp_pass_epa_allowed_rank, opp_pass_yds_allowed_rank, opp_yds_per_dropback_rank, opp_sos_adj_pass_yds_allowed, opp_yds_per_dropback_allowed, opp_explosive_pass_rate_allowed
+
+# MODEL.md — receiving yards (recy-lgbm-v1)
+
+Last retrain: 2026-09-04 22:35 UTC · model_run id 41 · 33100 training rows
+
+Positions WR, TE, RB, FB; eligibility tgt_ewm ≥ 2.0. Target modelled relative to `league_recy_prev_season`; empirical residual distribution; iterations 501, scale k=1.000.
+
+## Holdout (2024–2025)
+
+| metric | value |
+|---|---|
+| games | 6654 |
+| MAE (model) | 20.43 |
+| MAE baseline: EWM of player's stat | 20.92 |
+| MAE proxy market (player-only) | 20.70 |
+| q10 / q25 / q75 / q90 coverage | 0.097 / 0.260 / 0.763 / 0.907 |
+
+### P(over) calibration at synthetic lines (holdout)
+
+| bucket | n | pred | actual |
+|---|---|---|---|
+| (0.0, 0.2] | 2204 | 0.167 | 0.155 |
+| (0.2, 0.3] | 5447 | 0.262 | 0.255 |
+| (0.3, 0.4] | 5537 | 0.347 | 0.347 |
+| (0.4, 0.5] | 6774 | 0.481 | 0.477 |
+| (0.5, 0.6] | 412 | 0.594 | 0.592 |
+| (0.6, 0.7] | 4286 | 0.645 | 0.652 |
+| (0.7, 0.8] | 4041 | 0.744 | 0.751 |
+| (0.8, 1.0] | 4569 | 0.918 | 0.934 |
+
+## Top features (gain share)
+
+| feature | share |
+|---|---|
+| recy_ewm | 0.337 |
+| wopr_ewm | 0.235 |
+| recy_l10 | 0.087 |
+| tgt_ewm | 0.058 |
+| tgt_rank_team | 0.032 |
+| tgt_share_ewm | 0.024 |
+| recy_std_avg | 0.023 |
+| implied_total | 0.018 |
+| days_since_last | 0.011 |
+| recy_prev_season | 0.010 |
+| total_line | 0.009 |
+| receiving_air_yards_ewm | 0.008 |
+| recy_l3 | 0.007 |
+| wind | 0.006 |
+| target_share_out | 0.006 |
+| air_yards_share_ewm | 0.005 |
+| recy_l5 | 0.005 |
+| tgt_share_l3 | 0.005 |
+| league_rec_prev_season | 0.004 |
+| ypc_ewm | 0.004 |
+| ypt_ewm | 0.003 |
+| team_plays_pg | 0.003 |
+| rec_l3 | 0.003 |
+| recy_sd_l10 | 0.003 |
+| touches_ewm | 0.003 |
+
+# MODEL.md — rushing yards (ruy-lgbm-v1)
+
+Last retrain: 2026-09-04 22:35 UTC · model_run id 42 · 10075 training rows
+
+Positions RB, FB, WR; eligibility car_ewm ≥ 4.0. Target modelled relative to `league_ruy_prev_season`; empirical residual distribution; iterations 170, scale k=0.975.
+
+## Holdout (2024–2025)
+
+| metric | value |
+|---|---|
+| games | 2064 |
+| MAE (model) | 23.91 |
+| MAE baseline: EWM of player's stat | 24.82 |
+| MAE proxy market (player-only) | 23.90 |
+| q10 / q25 / q75 / q90 coverage | 0.094 / 0.234 / 0.751 / 0.906 |
+
+### P(over) calibration at synthetic lines (holdout)
+
+| bucket | n | pred | actual |
+|---|---|---|---|
+| (0.0, 0.2] | 7 | 0.198 | 0.000 |
+| (0.2, 0.3] | 1714 | 0.255 | 0.256 |
+| (0.3, 0.4] | 2376 | 0.354 | 0.363 |
+| (0.4, 0.5] | 2095 | 0.486 | 0.500 |
+| (0.5, 0.6] | 255 | 0.595 | 0.671 |
+| (0.6, 0.7] | 1837 | 0.638 | 0.664 |
+| (0.7, 0.8] | 1027 | 0.754 | 0.774 |
+| (0.8, 1.0] | 1009 | 0.866 | 0.914 |
+
+## Top features (gain share)
+
+| feature | share |
+|---|---|
+| car_rank_team | 0.458 |
+| ruy_ewm | 0.123 |
+| ruy_std_avg | 0.068 |
+| carry_share_l3 | 0.045 |
+| ruy_l10 | 0.039 |
+| ruy_l5 | 0.033 |
+| ruy_l3 | 0.028 |
+| opp_rush_yds_allowed_pg | 0.022 |
+| carry_share_ewm | 0.016 |
+| team_plays_pg | 0.014 |
+| ruy_prev_season | 0.014 |
+| car_l3 | 0.010 |
+| ypt_ewm | 0.008 |
+| opp_rush_yds_allowed_rank | 0.007 |
+| car_l10 | 0.007 |
+| recy_std_avg | 0.007 |
+| ypc_ewm | 0.007 |
+| games_std | 0.006 |
+| opp_rush_epa_allowed | 0.006 |
+| spread_team | 0.005 |
+| adot_ewm | 0.005 |
+| carry_trend | 0.004 |
+| opp_rush_epa_allowed_rank | 0.003 |
+| car_ewm | 0.003 |
+| ruy_sd_l10 | 0.003 |
+
+# MODEL.md — receptions (rec-lgbm-v1)
+
+Last retrain: 2026-09-04 22:36 UTC · model_run id 43 · 33100 training rows
+
+Positions WR, TE, RB, FB; eligibility tgt_ewm ≥ 2.0. Target modelled relative to `league_rec_prev_season`; empirical residual distribution; iterations 465, scale k=0.950.
+
+## Holdout (2024–2025)
+
+| metric | value |
+|---|---|
+| games | 6654 |
+| MAE (model) | 1.50 |
+| MAE baseline: EWM of player's stat | 1.54 |
+| MAE proxy market (player-only) | 1.52 |
+| q10 / q25 / q75 / q90 coverage | 0.097 / 0.248 / 0.756 / 0.904 |
+
+### P(over) calibration at synthetic lines (holdout)
+
+| bucket | n | pred | actual |
+|---|---|---|---|
+| (0.0, 0.2] | 11127 | 0.116 | 0.153 |
+| (0.2, 0.3] | 5080 | 0.247 | 0.317 |
+| (0.3, 0.4] | 3826 | 0.348 | 0.436 |
+| (0.4, 0.5] | 3296 | 0.449 | 0.546 |
+| (0.5, 0.6] | 3012 | 0.550 | 0.675 |
+| (0.6, 0.7] | 2822 | 0.652 | 0.776 |
+| (0.7, 0.8] | 2671 | 0.749 | 0.851 |
+| (0.8, 1.0] | 1436 | 0.854 | 0.971 |
+
+## Top features (gain share)
+
+| feature | share |
+|---|---|
+| rec_ewm | 0.497 |
+| tgt_ewm | 0.093 |
+| rec_l10 | 0.065 |
+| tgt_share_ewm | 0.049 |
+| tgt_rank_team | 0.046 |
+| recy_std_avg | 0.020 |
+| tgt_l5 | 0.017 |
+| rec_l3 | 0.012 |
+| days_since_last | 0.012 |
+| tgt_share_l3 | 0.011 |
+| tgt_l10 | 0.011 |
+| implied_total | 0.010 |
+| recy_l3 | 0.009 |
+| total_line | 0.007 |
+| recy_ewm | 0.007 |
+| recy_prev_season | 0.006 |
+| rec_l5 | 0.006 |
+| tgt_share_prev_season | 0.005 |
+| car_rank_team | 0.005 |
+| target_share_out | 0.005 |
+| adot_ewm | 0.005 |
+| league_rec_prev_season | 0.004 |
+| games_career | 0.004 |
+| rec_prev_season | 0.003 |
+| catch_rate_ewm | 0.003 |

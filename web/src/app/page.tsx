@@ -96,7 +96,7 @@ export default async function Home() {
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <p className="eyebrow">Player props</p>
-            <h2 className="h-section mt-1">Passing yards · closest to the bar</h2>
+            <h2 className="h-section mt-1">Passing · receiving · rushing · receptions — closest to the bar</h2>
           </div>
           <Link href="/board" className="text-sm text-accent hover:underline">All {props.length} priced →</Link>
         </div>

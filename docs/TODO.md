@@ -42,3 +42,5 @@ What to look at:
 - [ ] First-half passing-yards props once a market source exists.
 - [ ] Trends engine: each trend must declare a mechanism + min sample (≥100) and is badge-only.
 - [ ] Never: same-game parlays, betting splits, RLM, futures without a simulator behind them.
+- [ ] Sheet: add Rec Yds / Rush Yds / Receptions rows to the Model Stats block (re-upload build_gs.py output).
+- [ ] Run `odds_history --markets player_reception_yds player_rush_yds player_receptions` (2023–25) and set per-market bars from the real-line tables.
