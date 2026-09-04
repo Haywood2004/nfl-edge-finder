@@ -35,3 +35,10 @@ What to look at:
 - Model v2 shipped: relative target + empirical residuals (calibration fixed), regime / script-neutral / injury / league-environment features, two-level market anchor. Weekly job now retrains passing yards every Tuesday.
 - Open: ESPN injuries endpoint returned 403 from GitHub Actions runners (now sent with a browser UA; if still blocked, fall back to nflverse-only and the card says "report not published"). Odds API key appears to be on the 500-credit tier (~400 left) — upgrade before the Sunday snapshots or reduce the snapshot schedule.
 - Next: refit MARKET_ANCHOR_W / LEVEL_ANCHOR_W from graded cards + CLV after ~6 weeks; receiving/rushing yards models (Milestone 2) reuse the v2 scaffolding; email capture / paid tier once the track record has a sample.
+
+## From the Unabated playbook review (2026-09-04)
+- [ ] Alternate lines: price every alt line each book posts from the same distribution (the data is already in `odds_lines`; backtest fixtures include BetRivers alternates). Highest-value derivative market on the "money tree".
+- [ ] Injury-driven re-scoring Thu–Sun: make the ESPN feed reliable (403 from Actions runners) and add a "role change" factor when a teammate's status flips.
+- [ ] First-half passing-yards props once a market source exists.
+- [ ] Trends engine: each trend must declare a mechanism + min sample (≥100) and is badge-only.
+- [ ] Never: same-game parlays, betting splits, RLM, futures without a simulator behind them.
