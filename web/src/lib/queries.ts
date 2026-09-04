@@ -12,6 +12,8 @@ export type Card = {
   ev_per_unit: number; confidence: number; score: number; published: boolean; factors: Factor[];
   line_open: number | null; book_prices: { book: string; line: number; over: number; under: number }[];
   trend_badges: string[]; home_team: string; away_team: string;
+  /** "blend" (default, what the pipeline publishes) or "raw" (synthetic card from the un-anchored ratings model) */
+  basis?: "blend" | "raw"; href?: string;
 };
 
 /** Cards from the most recent scoring run for the current target week. */
@@ -138,3 +140,44 @@ export async function trackBreakdown() {
     SELECT 'week', week::text, count(*)::int, sum((result='win')::int)::int, sum((result='loss')::int)::int, sum((result='push')::int)::int, coalesce(sum(profit_units),0)::float, avg(clv_prob)::float FROM g GROUP BY week
     ORDER BY 1, 2`;
 }
+
+
+/** Synthetic moneyline cards from the UN-ANCHORED ratings model, one per side per game where that side's
+ *  raw probability beats the fair probability at the best available price. These are NOT published picks:
+ *  the raw model loses vs closing lines in every backtest bucket (MODEL.md), so the pipeline blends it 95%
+ *  toward the market before it makes cards. The Full Board exposes them behind a basis toggle so the model's
+ *  own opinion is visible and trackable, labelled as such. */
+export function rawMoneylineCards(games: GameProjection[]): Card[] {
+  const out: Card[] = [];
+  for (const g of games) {
+    const pm = Number(g.p_home_model);
+    const pb = g.p_home_market == null ? null : Number(g.p_home_market);
+    const factors = (g.factors ?? []).map((f) => ({ ...f, impact: (f as { impact?: "+" | "−" | "▬" }).impact ?? "▬" }));
+    for (const [side, p, best, opp] of [[g.home_team, pm, g.home_best, g.away_team], [g.away_team, 1 - pm, g.away_best, g.home_team]] as const) {
+      if (!best) continue;
+      const fair = pb == null ? 1 / best.dec : side === g.home_team ? pb : 1 - pb;
+      const edge = p - fair;
+      if (edge < 0.02) continue;
+      const ev = p * (best.dec - 1) - (1 - p);
+      const explain = {
+        factor: "raw_basis", value: edge, impact: "▬" as const, impact_over: 0, magnitude: 1,
+        text: `Un-anchored ratings model: ${TEAM_LABEL(side)} ${(p * 100).toFixed(1)}% vs market ${(fair * 100).toFixed(1)}%. ` +
+          "This basis is NOT a published pick: bet against closing lines 2019–2025 the raw model lost at every edge threshold (≥15%: −13.9% ROI).",
+        source: { table: "model_runs", key: "metrics" },
+      };
+      out.push({
+        id: -Math.abs(hash(`${g.game_id}:${side}`)), created_at: g.created_at, season: g.season, week: g.week, game_id: g.game_id,
+        event_id: null, player_id: side, player_name: TEAM_LABEL(side), position: "TEAM", team: side, opponent: opp,
+        kickoff_utc: g.kickoff_utc, market: "h2h", side, line: 0, price_american: best.american, price_decimal: best.dec,
+        book: best.book, snapshot_id: 0, projection_id: 0, model_run_id: 0, model_prob: p, market_prob: fair, edge,
+        ev_per_unit: ev, confidence: 30, score: edge * 30, published: false,
+        factors: [explain, ...factors], line_open: null, book_prices: [], trend_badges: [],
+        home_team: g.home_team, away_team: g.away_team, basis: "raw", href: `/games/${g.game_id}`,
+      });
+    }
+  }
+  return out.sort((a, b) => Number(b.edge) - Number(a.edge));
+}
+
+const TEAM_LABEL = (abbr: string) => abbr;
+function hash(s: string) { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0; return h || 1; }

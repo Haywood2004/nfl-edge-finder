@@ -6,6 +6,7 @@ const nav = [
   { href: "/", label: "This Week" },
   { href: "/board", label: "Full Board" },
   { href: "/rankings/defense", label: "Defense" },
+  { href: "/kelly", label: "Kelly" },
   { href: "/track-record", label: "Track Record" },
   { href: "/how", label: "Methodology" },
 ];
