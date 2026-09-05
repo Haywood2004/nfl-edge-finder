@@ -22,12 +22,21 @@ from ..teams import ODDS_API_TO_ABBR
 from .odds_jobs import _lines_from_bookmakers, build_consensus
 
 CLOSE_MINUTES = 60
-CREDIT_RESERVE = 1500
+CREDIT_RESERVE = 3000   # keep enough for the in-season snapshot schedule (4 prop markets ≈ 400 credits/week)
 FIXTURE_DIR = ROOT / "pipeline" / "fixtures" / "odds_history"
 
 
-def _hist_get(api: OddsAPI, path: str, params: dict, note: str) -> dict:
-    return api._get(path, params, note)
+def _hist_get(api: OddsAPI, path: str, params: dict, note: str, tries: int = 4) -> dict:
+    """Historical calls are long-running batches; retry transient connection errors with backoff."""
+    import time, requests
+    for i in range(tries):
+        try:
+            return api._get(path, params, note)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if i == tries - 1:
+                raise
+            print(f"[hist] transient error ({e.__class__.__name__}), retry {i + 1}/{tries - 1}")
+            time.sleep(3 * (i + 1))
 
 
 def _week_events(api: OddsAPI, season: int, week: int, games: pd.DataFrame) -> pd.DataFrame:
@@ -101,7 +110,7 @@ def backfill_odds_history(seasons: list[int], markets: tuple[str, ...] = ("playe
                 total += len(rows)
                 print(f"[hist] {season} wk{week}: {len(ev)} events, {len(rows)} lines, {credits} credits, "
                       f"{api.last_headers.get('x-requests-remaining')} remaining")
-            write_fixture(season, markets)
+                write_fixture(season, markets)   # after every week so a crash still leaves a committed fixture
         run.rows = total
     return total
 
@@ -111,8 +120,7 @@ def write_fixture(season: int, markets: tuple[str, ...]) -> Path:
     df = db.read_sql("""SELECT s.season, s.week, e.game_id, e.commence_time, l.market, l.bookmaker, l.player, l.side,
                                l.line, l.price_decimal, l.price_american, l.book_last_update
                         FROM odds_lines l JOIN odds_snapshots s ON s.id=l.snapshot_id JOIN odds_events e ON e.event_id=l.event_id
-                        WHERE s.label='hist_close' AND s.season=:s AND l.market = ANY(:m)""",
-                     {"s": season, "m": list(markets)})
+                        WHERE s.label='hist_close' AND s.season=:s""", {"s": season})   # ALL markets: one fixture per season
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     p = FIXTURE_DIR / f"{season}.parquet"
     df.to_parquet(p, index=False)
