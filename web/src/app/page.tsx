@@ -15,9 +15,11 @@ export default async function Home() {
   const props = cards.filter((c) => c.market !== "h2h");
   const mls = cards.filter((c) => c.market === "h2h");
   const clears = cards.filter((c) => clearsBar(c.market, Number(c.edge), c.confidence));
-  const ranked = [...cards].sort((a, b) => Number(b.edge) - Number(a.edge));
+  // "closest to the bar" ranks by edge × confidence so a 35% edge at confidence 20 (role change the model
+  // can't see) doesn't outrank a 9% edge at confidence 56
+  const ranked = cards.filter((c) => c.confidence >= 45).sort((a, b) => Number(b.score) - Number(a.score));
   const closest = ranked.slice(0, 4);
-  const maxEdge = closest[0] ? Number(closest[0].edge) : 0;
+  const maxEdge = clears.length ? Math.max(...clears.map((c) => Number(c.edge))) : (closest[0] ? Number(closest[0].edge) : 0);
   const graded = rec.wins + rec.losses;
   const roi = rec.n ? rec.units / rec.n : 0;
 
@@ -96,12 +98,12 @@ export default async function Home() {
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <p className="eyebrow">Player props</p>
-            <h2 className="h-section mt-1">Passing · receiving · rushing · receptions — closest to the bar</h2>
+            <h2 className="h-section mt-1">Passing · receiving · rushing · receptions — best edge × confidence</h2>
           </div>
           <Link href="/board" className="text-sm text-accent hover:underline">All {props.length} priced →</Link>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {props.sort((a, b) => Number(b.edge) - Number(a.edge)).slice(0, 9).map((c) => <PropTile key={c.id} c={c} bar={BAR_PROPS} />)}
+          {props.filter((c) => c.confidence >= 45).sort((a, b) => Number(b.score) - Number(a.score)).slice(0, 9).map((c) => <PropTile key={c.id} c={c} bar={barFor(c.market)} />)}
         </div>
       </section>
 
