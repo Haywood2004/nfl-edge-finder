@@ -23,7 +23,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-xs text-muted hover:underline">← This week</Link>
+        <Link href="/" className="text-xs text-muted hover:underline">← Screener</Link>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{TEAM_NAMES[g.away_team]} @ {TEAM_NAMES[g.home_team]}</h1>
         <p className="text-sm text-muted">{kickoff(g.kickoff_utc)} · Elo {g.away_team} {Number(g.elo_away).toFixed(0)} · {g.home_team} {Number(g.elo_home).toFixed(0)}</p>
       </div>

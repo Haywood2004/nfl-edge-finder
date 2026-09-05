@@ -38,8 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div>
               <p className="eyebrow mb-2">Product</p>
               <ul className="space-y-1.5 text-fg-2">
-                <li><Link href="/" className="hover:text-fg">This week&apos;s edges</Link></li>
-                <li><Link href="/board" className="hover:text-fg">Full board</Link></li>
+                <li><Link href="/" className="hover:text-fg">Screener</Link></li>
+                <li><Link href="/kelly" className="hover:text-fg">Kelly sizing</Link></li>
                 <li><Link href="/track-record" className="hover:text-fg">Track record</Link></li>
                 <li><Link href="/how" className="hover:text-fg">Methodology &amp; model card</Link></li>
               </ul>

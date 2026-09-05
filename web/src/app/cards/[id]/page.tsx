@@ -32,7 +32,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-xs text-muted hover:underline">← This week</Link>
+        <Link href="/" className="text-xs text-muted hover:underline">← Screener</Link>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
           <span className="rounded bg-panel-2 px-1.5 py-0.5 text-xs text-muted">{c.position}</span>
           <h1 className="text-2xl font-semibold tracking-tight">

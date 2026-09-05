@@ -11,13 +11,14 @@ const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half"], [0.25, "Quarter (default)"]
 export function KellyTable({ cards }: { cards: Card[] }) {
   const [bankroll, setBankroll] = useState(DEFAULT_BANKROLL);
   const [fraction, setFraction] = useState<number>(DEFAULT_FRACTION);
-  const [minEdge, setMinEdge] = useState(4);
+  const [minEdge, setMinEdge] = useState(0);
+  const [betsOnly, setBetsOnly] = useState(true);
   const [minConf, setMinConf] = useState(55);
   const [cap, setCap] = useState(MAX_STAKE_PCT * 100);
 
   const rows = useMemo(() => {
     return cards
-      .filter((c) => Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
+      .filter((c) => (!betsOnly || (Number(c.edge) >= barFor(c.market) && c.confidence >= 55)) && Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
       .map((c) => {
         const p = Number(c.model_prob), dec = Number(c.price_decimal);
         const full = kellyFull(p, dec);
@@ -26,7 +27,7 @@ export function KellyTable({ cards }: { cards: Card[] }) {
       })
       .filter((r) => r.full > 0)
       .sort((a, b) => b.stake - a.stake || b.full - a.full);
-  }, [cards, minEdge, minConf, fraction, bankroll, cap]);
+  }, [cards, betsOnly, minEdge, minConf, fraction, bankroll, cap]);
 
   const total = rows.reduce((s, r) => s + r.stake, 0);
   const expected = rows.reduce((s, r) => s + r.stake * r.ev, 0);
@@ -44,6 +45,12 @@ export function KellyTable({ cards }: { cards: Card[] }) {
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-muted">Cap per bet (% bankroll)
           <input type="number" className={`${sel} w-20`} value={cap} min={0.5} max={25} step={0.5} onChange={(e) => setCap(+e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-muted">Which bets
+          <select className={sel} value={betsOnly ? "bets" : "all"} onChange={(e) => setBetsOnly(e.target.value === "bets")}>
+            <option value="bets">Bets only (same as screener)</option>
+            <option value="all">Everything priced</option>
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-[12px] text-muted">Min edge %
           <input type="number" className={`${sel} w-20`} value={minEdge} min={0} max={30} onChange={(e) => setMinEdge(+e.target.value)} />

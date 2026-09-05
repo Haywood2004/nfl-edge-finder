@@ -3,10 +3,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const nav = [
-  { href: "/", label: "This Week" },
-  { href: "/board", label: "Full Board" },
+  { href: "/", label: "Screener" },
   { href: "/rankings/defense", label: "Defense" },
-  { href: "/kelly", label: "Kelly" },
   { href: "/track-record", label: "Track Record" },
   { href: "/how", label: "Methodology" },
 ];
