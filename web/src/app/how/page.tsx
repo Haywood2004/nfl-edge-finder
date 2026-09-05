@@ -101,6 +101,36 @@ export default async function How() {
         </section>
       )}
 
+      {models.filter((m) => m.market !== "h2h" && m.market !== "player_pass_yds" && (m.metrics as { real_lines?: unknown }).real_lines).map((m) => {
+        const r = (m.metrics as { real_lines: { seasons: number[]; overall: Record<string, Bucket> } }).real_lines;
+        const hh = (m.metrics as { holdout?: { mae: number; mae_baseline_ewm: number; n: number } }).holdout;
+        const label = { player_reception_yds: "receiving yards", player_receptions: "receptions", player_rush_yds: "rushing yards" }[m.market] ?? m.market;
+        const bar = m.market === "player_pass_yds" ? "edge>=0.06" : "edge>=0.08";
+        return (
+          <section key={m.market} className="card p-5 sm:p-6">
+            <p className="eyebrow">Model card · {label}</p>
+            <h2 className="h-section mt-1">{m.version} · real closing lines {r.seasons.join(", ")}</h2>
+            {hh && <p className="mt-2 text-[13px] text-muted">Held-out MAE {num(hh.mae, 2)} vs {num(hh.mae_baseline_ewm, 2)} for the player&apos;s recent average ({hh.n} games). Below: 1u flat at the best closing price, walk-forward.</p>}
+            <div className="mt-3 overflow-x-auto">
+              <table className="data text-[13px]">
+                <thead><tr><th>Min edge</th><th>Bets</th><th>W-L</th><th>Win rate</th><th>Units</th><th>ROI</th></tr></thead>
+                <tbody>
+                  {Object.entries(r.overall).filter(([k]) => ["edge>=0.04", "edge>=0.06", "edge>=0.08", "edge>=0.10"].includes(k)).map(([k, x]) => (
+                    <tr key={k} className={k === bar ? "bg-up/5" : ""}>
+                      <td className="font-medium">≥ {Math.round(Number(k.slice(6)) * 100)}%{k === bar && <span className="pill pill-up ml-1.5">publish bar</span>}</td>
+                      <td>{x.bets}</td><td>{x.wins}-{x.losses}</td><td>{x.win_rate == null ? "–" : pct(x.win_rate, 1)}</td>
+                      <td className={x.units >= 0 ? "text-up" : "text-down"}>{x.units >= 0 ? "+" : ""}{num(x.units, 1)}</td>
+                      <td className={`font-semibold ${(x.roi ?? 0) >= 0 ? "text-up" : "text-down"}`}>{x.roi == null ? "–" : signedPct(x.roi)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {r.seasons.length < 2 && <p className="mt-2 text-[12px] text-dim">One season of closing lines so far — treat as promising, not proven. More seasons are backfilled as API credits allow.</p>}
+          </section>
+        );
+      })}
+
       {mlt?.test_2025 && (
         <section className="card p-5 sm:p-6">
           <p className="eyebrow">Model card · moneyline</p>

@@ -71,12 +71,13 @@ class PropModel:
         return pd.DataFrame({"mean": mean, "sd": sd, **q})
 
     def p_over(self, mean, sd, line):
-        return 1 - self._zcdf((np.asarray(line) + 0.5 - np.asarray(mean)) / np.asarray(sd))
+        return 1 - self._zcdf((np.asarray(line) - np.asarray(mean)) / np.asarray(sd))
 
 
 def load_training(spec: MarketSpec) -> tuple[pd.DataFrame, list[str]]:
+    usage_actual = "target_carries" if spec.target == "target_rushing_yards" else "target_targets"
     r = db.read_sql(f"""SELECT season, week, game_id, player_id, player_name, position, team, opponent, features,
-                               {spec.target} AS y
+                               {spec.target} AS y, {usage_actual} AS usage_actual
                         FROM feat_player_game WHERE {spec.target} IS NOT NULL AND position = ANY(:p)""",
                     {"p": list(spec.positions)})
     feats = pd.DataFrame([json.loads(f) if isinstance(f, str) else f for f in r.features])

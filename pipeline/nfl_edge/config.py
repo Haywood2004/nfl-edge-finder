@@ -25,6 +25,16 @@ FIRST_TRAIN_SEASON = 2016
 PUBLISH_MIN_EDGE_PROPS = float(os.environ.get("PUBLISH_MIN_EDGE_PROPS", "0.06"))
 PUBLISH_MIN_EDGE_ML = float(os.environ.get("PUBLISH_MIN_EDGE_ML", "0.15"))
 PUBLISH_MIN_EDGE = PUBLISH_MIN_EDGE_PROPS   # back-compat alias
+# Per-market bars from the real closing-line backtests (DECISIONS.md #27). Receiving markets: ROI rises with
+# edge (2025: rec yds ≥8% → 1,313 bets +6.8%; receptions ≥8% → 1,343 bets +6.7%). Rushing is weak (+1.6% at 6%)
+# and stays provisional. Passing: 4–8% is the money zone, ≥10% loses.
+PUBLISH_MIN_EDGE_BY_MARKET = {
+    "player_pass_yds": PUBLISH_MIN_EDGE_PROPS,
+    "player_reception_yds": float(os.environ.get("BAR_RECY", "0.08")),
+    "player_receptions": float(os.environ.get("BAR_REC", "0.08")),
+    "player_rush_yds": float(os.environ.get("BAR_RUY", "0.08")),
+    "h2h": PUBLISH_MIN_EDGE_ML,
+}
 PUBLISH_MIN_CONFIDENCE = 55
 
 # Scoring blends the model mean toward the consensus line: mean_used = (1-w)*model + w*line.

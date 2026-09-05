@@ -8,7 +8,7 @@ Distribution : v2 — EMPIRICAL. Standardised out-of-fold residuals z = (y − m
                fitted on the validation season for 25/75 coverage). Passing-yard residuals are left-skewed
                (benchings, blowouts, in-game injuries) so a Normal over-prices the under side; the
                empirical z-distribution keeps the skew.
-P(over line) = 1 - F_z((line + 0.5 - mean) / sd)   (+0.5 continuity; lines are x.5 so no pushes)
+P(over line) = 1 - F_z((line - mean) / sd)   (lines are x.5: P(Y ≥ line+0.5) for integer Y ≈ P(Yc > line), no correction)
 
 Walk-forward protocol (docs/MODEL.md): train 2016-2022, validate 2023, test 2024-2025 for the
 reported metrics; the production artifact is then refit on all seasons through the last completed one.
@@ -109,7 +109,7 @@ class PassingYardsModel:
         return pd.DataFrame({"mean": mean, "sd": sd, **q})
 
     def p_over(self, mean, sd, line):
-        return 1 - self._zcdf((np.asarray(line) + 0.5 - np.asarray(mean)) / np.asarray(sd))
+        return 1 - self._zcdf((np.asarray(line) - np.asarray(mean)) / np.asarray(sd))
 
 
 def fit(df: pd.DataFrame, names: list[str], train_seasons, valid_season) -> PassingYardsModel:

@@ -32,7 +32,7 @@ export default async function Home() {
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted">
             Every line on the board is priced against a projection that accounts for the opposing defense, the injury report on both sides and the game environment.
-            A prop is flagged when the model&apos;s probability beats the best available price by {Math.round(BAR_PROPS * 100)}% or more (a bar chosen from three seasons of real closing lines); a moneyline only when a venue misprices it by {Math.round(BAR_ML * 100)}%. Every card shows its reasons.
+            A prop is flagged when the model&apos;s probability beats the best available price by {Math.round(BAR_PROPS * 100)}–8% or more — each market&apos;s bar is set where its real closing-line backtest pays — and a moneyline only when a venue misprices it by {Math.round(BAR_ML * 100)}%. Every card shows its reasons.
           </p>
           <div className="mt-4"><Freshness /></div>
         </div>
@@ -49,7 +49,7 @@ export default async function Home() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <p className="eyebrow">Flagged this week</p>
-            <h2 className="h-section mt-1">Props ≥ {Math.round(BAR_PROPS * 100)}% · moneylines ≥ {Math.round(BAR_ML * 100)}% · confidence ≥ 55</h2>
+            <h2 className="h-section mt-1">Passing ≥ 6% · receiving &amp; rushing ≥ 8% · moneylines ≥ {Math.round(BAR_ML * 100)}% · confidence ≥ 55</h2>
           </div>
           <Link href="/board" className="text-sm text-accent hover:underline">Full board →</Link>
         </div>

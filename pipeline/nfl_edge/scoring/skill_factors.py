@@ -219,8 +219,7 @@ def skill_confidence(X: dict, cand: dict, open_line, weather, injury, injury_dat
         thresh = 0.5 if market == "player_receptions" else 3
         if against and abs(moved) >= thresh:
             c -= 8
-    if cand["edge"] > 0.15:
-        c -= 12
-    elif cand["edge"] > 0.10:
-        c -= 6
+    # receiving markets: real-line ROI rises with edge (2025), so only the extreme tail is discounted
+    if cand["edge"] > 0.20:
+        c -= 8
     return int(max(0, min(100, round(c))))

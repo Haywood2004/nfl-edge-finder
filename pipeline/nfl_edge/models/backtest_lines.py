@@ -81,22 +81,27 @@ def score_season(df: pd.DataFrame, names: list[str], lines: pd.DataFrame, season
         model.mean_model = PY._fit_mean(df[df.season < season][names], (df.y - base)[df.season < season], n_iter=model.n_iter)
     t = df[df.season == season].copy()
     pred = model.predict(t)
-    t["mean_raw"], t["sd"] = pred["mean"].values, pred["sd"].values
+    t["mean_raw"], t["sd"], t["q50_raw"] = pred["mean"].values, pred["sd"].values, pred["q50"].values
     t["nname"] = t.player_name.map(_norm)
     ml = lines[lines.season == season]
     cons = ml.groupby(["game_id", "nname"]).line.median().rename("cons_line").reset_index()
     t = t.merge(cons, on=["game_id", "nname"], how="inner")
     # level anchor per week (same rule as cards.py: needs ≥8 matched QBs)
     out = []
+    # anchors operate on the model MEDIAN (books deal a median line); the mean is shifted by the same amount
     for wk, g in t.groupby("week"):
-        gap = float(np.median(g.cons_line - g.mean_raw)) if len(g) >= 8 else 0.0
+        gap = float(np.median(g.cons_line - g.q50_raw)) if len(g) >= 8 else 0.0
         g = g.copy()
-        g["mean_lvl"] = g.mean_raw + level_w * gap
-        g["mean_used"] = (1 - anchor_w) * g.mean_lvl + anchor_w * g.cons_line
+        q50_lvl = g.q50_raw + level_w * gap
+        q50_used = (1 - anchor_w) * q50_lvl + anchor_w * g.cons_line
+        g["mean_used"] = g.mean_raw + (q50_used - g.q50_raw)
         out.append(g)
     t = pd.concat(out)
     # every book/line → both sides
-    bl = ml.merge(t[["game_id", "nname", "mean_used", "sd", "y", "player_name"]], on=["game_id", "nname"])
+    keep_cols = ["game_id", "nname", "mean_used", "sd", "y", "player_name"] + (["usage_actual"] if "usage_actual" in t else [])
+    bl = ml.merge(t[keep_cols], on=["game_id", "nname"])
+    if "usage_actual" in bl:   # a player who never got a target/carry was almost certainly inactive → the book voids the bet
+        bl = bl[bl.usage_actual.fillna(0) > 0]
     bl["p_over"] = model.p_over(bl.mean_used.values, bl.sd.values, bl.line.values)
     rows = []
     for side, p, dec, fair in (("Over", bl.p_over, bl.over_dec, bl.over_fair), ("Under", 1 - bl.p_over, bl.under_dec, bl.under_fair)):
@@ -149,7 +154,7 @@ def run(seasons: list[int] | None = None, grid: bool = True, market: str = "play
         res["by_side"][side] = summarize(g, (0.0, 0.04, 0.08))
     # calibration at real lines: predicted p vs hit rate
     allb["bucket"] = pd.cut(allb.p, [0, .4, .45, .5, .55, .6, .65, .7, 1.0])
-    allb.to_parquet(ROOT / "pipeline" / "artifacts" / f"backtest_{market}.parquet", index=False)
+    allb.drop(columns=["bucket"]).to_parquet(ROOT / "pipeline" / "artifacts" / f"backtest_{market}.parquet", index=False)
     res["calibration_real_lines"] = [{"bucket": str(k), "n": int(len(g)), "pred": float(g.p.mean()), "actual": float(g.win.mean())}
                                      for k, g in allb[~allb.push].groupby("bucket", observed=True)]
     if grid:
