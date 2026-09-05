@@ -48,3 +48,11 @@ PROP_MARKETS_V1 = [
     "player_receptions", "player_pass_tds", "player_anytime_td",
 ]
 GAME_MARKETS = ["h2h", "spreads", "totals"]
+
+# Sharp reference book (DECISIONS.md #29). Pinnacle is fetched from The Odds API "eu" region on the labelled
+# snapshots only (each extra region doubles per-event prop credits). It is a REFERENCE: never a bettable
+# venue for US users, so it is excluded from best-price selection and from card prices.
+SHARP_BOOK = "pinnacle"
+SHARP_REGION = "eu"
+SHARP_SNAPSHOT_LABELS = ("tue_open", "sun_am", "pre_kick", "manual")
+NON_BETTABLE_BOOKS = {"pinnacle"}

@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 from .. import db
 from ..sources.odds_api import OddsAPI, load_payload, american, implied
+from ..config import NON_BETTABLE_BOOKS, SHARP_BOOK, SHARP_REGION, SHARP_SNAPSHOT_LABELS
 from ..teams import ODDS_API_TO_ABBR
 from ..sources import polymarket
 from .nflverse_jobs import current_season
@@ -91,9 +92,11 @@ def build_consensus(snapshot_id: int) -> int:
                 s = ia + ib
                 pa.append(ia / s); pb.append(ib / s)
             for side in (a, b):
+                if book in NON_BETTABLE_BOOKS:
+                    continue   # sharp reference: informs the consensus, never the "best price"
                 if side in d and (best[side] is None or d[side].price_decimal > best[side].price_decimal):
                     best[side] = d[side]
-        if not pa:
+        if not pa or best[a] is None or best[b] is None:
             continue
         # column naming: "over" = first side alphabetically for team markets; Over/Under for props/totals
         oa, ob = (a, b) if a == "Over" else ((b, a) if b == "Over" else (a, b))
@@ -146,6 +149,14 @@ def ingest_odds(label: str = "manual", prop_markets: tuple[str, ...] = ("player_
                 credits += int(api.last_headers.get("x-requests-last", 0) or 0)
             for e in go:
                 rows += _lines_from_bookmakers(e["id"], e.get("bookmakers", []), snap_id)
+            if not from_dir and label in SHARP_SNAPSHOT_LABELS:
+                try:
+                    sg = api.game_odds(game_markets, regions=SHARP_REGION)
+                    credits += int(api.last_headers.get("x-requests-last", 0) or 0)
+                    for e in sg:
+                        rows += _lines_from_bookmakers(e["id"], [b for b in e.get("bookmakers", []) if b.get("key") == SHARP_BOOK], snap_id)
+                except Exception as e:
+                    print(f"[odds] sharp region game lines failed: {e}")
 
         # props: per event for this week's games only
         wk_games = db.read_sql("SELECT game_id FROM raw_games WHERE season=:s AND week=:w AND game_type='REG'",
@@ -164,6 +175,14 @@ def ingest_odds(label: str = "manual", prop_markets: tuple[str, ...] = ("player_
                 eo = api.event_odds(eid, prop_markets)
                 credits += int(api.last_headers.get("x-requests-last", 0) or 0)
             rows += _lines_from_bookmakers(eid, eo.get("bookmakers", []), snap_id)
+            # sharp reference (Pinnacle) from the EU region on the labelled snapshots only
+            if not from_dir and label in SHARP_SNAPSHOT_LABELS:
+                try:
+                    se = api.event_odds(eid, prop_markets, regions=SHARP_REGION)
+                    credits += int(api.last_headers.get("x-requests-last", 0) or 0)
+                    rows += _lines_from_bookmakers(eid, [b for b in se.get("bookmakers", []) if b.get("key") == SHARP_BOOK], snap_id)
+                except Exception as e:   # the sharp reference is optional; never fail the snapshot for it
+                    print(f"[odds] sharp region failed for {eid}: {e}")
 
         # Polymarket (prediction market) for the same games, same snapshot — graceful on any failure
         pm_rows, pm_missing = _polymarket_rows(targets, season, wk, snap_id, from_dir)

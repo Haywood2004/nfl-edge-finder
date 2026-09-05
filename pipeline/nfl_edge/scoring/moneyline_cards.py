@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import PUBLISH_MIN_EDGE_ML as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE
+from ..config import PUBLISH_MIN_EDGE_ML as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, NON_BETTABLE_BOOKS, SHARP_BOOK
 from ..ingest.odds_jobs import target_week
 from ..features.team_ratings import game_features
 from ..models.moneyline import load_latest, MARKET
@@ -54,7 +54,7 @@ def score_moneylines(week: int | None = None) -> int:
         for _, g in f.iterrows():
             gl = lines[lines.game_id == g.game_id]
             home_name, away_name = ABBR_TO_NAME[g.home_team], ABBR_TO_NAME[g.away_team]
-            books, poly = {}, None
+            books, poly, sharp = {}, None, None
             for bk, d in gl.groupby("bookmaker"):
                 h = d[d.side == home_name]; a = d[d.side == away_name]
                 if h.empty or a.empty:
@@ -62,10 +62,14 @@ def score_moneylines(week: int | None = None) -> int:
                 dh, da = float(h.price_decimal.iloc[0]), float(a.price_decimal.iloc[0])
                 if bk == "polymarket":
                     poly = {"dec_home": dh, "dec_away": da, "p_home": (1 / dh) / (1 / dh + 1 / da)}
+                elif bk in NON_BETTABLE_BOOKS:
+                    if bk == SHARP_BOOK:
+                        sharp = {"dec_home": dh, "dec_away": da, "p_home": (1 / dh) / (1 / dh + 1 / da)}
                 else:
                     ih, ia = 1 / dh, 1 / da
                     books[bk] = {"dec_home": dh, "dec_away": da, "p_home": ih / (ih + ia)}
-            p_books = float(np.mean([b["p_home"] for b in books.values()])) if books else None
+            # market reference: the sharp book's no-vig number when we have it, else the mean of the US books
+            p_books = sharp["p_home"] if sharp else (float(np.mean([b["p_home"] for b in books.values()])) if books else None)
             p_poly = poly["p_home"] if poly else None
             p_used = (1 - model.anchor_w) * g.p_model + model.anchor_w * p_books if p_books is not None else float(g.p_model)
 
@@ -83,7 +87,7 @@ def score_moneylines(week: int | None = None) -> int:
                     if side not in best or cand["ev"] > best[side]["ev"]:
                         best[side] = cand
 
-            factors = _factors(g, elo_rank, p_books, p_poly, p_used, books, poly, model.anchor_w)
+            factors = _factors(g, elo_rank, p_books, p_poly, p_used, books, poly, model.anchor_w, sharp)
             proj_rows.append({
                 "model_run_id": run_id, "season": season, "week": wk, "game_id": g.game_id, "snapshot_id": snap_id,
                 "home_team": g.home_team, "away_team": g.away_team, "kickoff_utc": g.kickoff_utc,
@@ -126,7 +130,7 @@ def _impact(x: dict, is_home: bool) -> str:
     return "+" if v > 0 else "−" if v < 0 else "▬"
 
 
-def _factors(g, elo_rank, p_books, p_poly, p_used, books, poly, w) -> list[dict]:
+def _factors(g, elo_rank, p_books, p_poly, p_used, books, poly, w, sharp=None) -> list[dict]:
     H, A = TEAM_NAMES[g.home_team], TEAM_NAMES[g.away_team]
     F = []
     d = float(g.elo_diff)
@@ -154,7 +158,8 @@ def _factors(g, elo_rank, p_books, p_poly, p_used, books, poly, w) -> list[dict]
                   "source": {"table": "raw_games", "key": "div_game"}})
     if p_books is not None:
         F.append({"factor": "market", "value": round(p_books, 3), "impact_home": 0, "magnitude": 0.2,
-                  "text": f"Sportsbook consensus (no-vig, {len(books)} books): {H} {p_books:.1%} · {A} {1 - p_books:.1%}",
+                  "text": (f"Pinnacle (sharp, no-vig): {H} {p_books:.1%} · {A} {1 - p_books:.1%}; {len(books)} US books averaged"
+                           if sharp else f"Sportsbook consensus (no-vig, {len(books)} books): {H} {p_books:.1%} · {A} {1 - p_books:.1%}"),
                   "source": {"table": "odds_consensus", "key": "over_consensus_prob"}})
     F.append({"factor": "model_vs_market", "value": round(float(g.p_model), 3), "impact_home": 0, "magnitude": 0.3,
               "text": f"Ratings model alone: {H} {g.p_model:.1%}; blended {int(w * 100)}% toward the market → {p_used:.1%} (the raw model loses vs closing lines — see MODEL.md)",

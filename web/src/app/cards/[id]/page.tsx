@@ -72,7 +72,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
             <thead className="text-left text-xs text-muted"><tr><th>Book</th><th>Line</th><th>Over</th><th>Under</th></tr></thead>
             <tbody>
               {c.book_prices.map((b) => (
-                <tr key={b.book + b.line} className={b.book === c.book && Number(b.line) === line ? "text-accent" : ""}>
+                <tr key={b.book + b.line} className={b.book === c.book && Number(b.line) === line ? "text-accent" : b.book === "pinnacle" ? "text-warn" : ""}>
                   <td className="py-0.5">{book(b.book)}</td><td>{b.line}</td><td>{american(b.over)}</td><td>{american(b.under)}</td>
                 </tr>
               ))}

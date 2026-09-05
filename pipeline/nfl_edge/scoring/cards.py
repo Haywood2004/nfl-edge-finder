@@ -13,7 +13,7 @@ import re
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE_BY_MARKET, PUBLISH_MIN_EDGE_PROPS, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W
+from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE_BY_MARKET, PUBLISH_MIN_EDGE_PROPS, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W, NON_BETTABLE_BOOKS, SHARP_BOOK
 from ..ingest.odds_jobs import target_week
 from ..models.passing_yards import load_latest as load_latest_py, MARKET as PASS_MARKET
 from ..models.player_props import load_latest as load_latest_prop, SPECS
@@ -125,17 +125,23 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                 n_unmatched += 1
                 continue
             X_row = json.loads(f.features) if isinstance(f.features, str) else f.features
-            # book-by-book two-way pricing
-            books = []
+            # book-by-book two-way pricing (bettable US books); the sharp reference book is kept separately
+            books, sharp = [], None
             for (book, line), g in pl.groupby(["bookmaker", "line"]):
                 o = g[g.side == "Over"]; u = g[g.side == "Under"]
                 if o.empty or u.empty:
                     continue
                 po, pu = 1 / o.price_decimal.iloc[0], 1 / u.price_decimal.iloc[0]
-                books.append({"book": book, "line": float(line),
-                              "over_dec": float(o.price_decimal.iloc[0]), "under_dec": float(u.price_decimal.iloc[0]),
-                              "over_american": int(o.price_american.iloc[0]), "under_american": int(u.price_american.iloc[0]),
-                              "over_fair": po / (po + pu), "under_fair": pu / (po + pu)})
+                row = {"book": book, "line": float(line),
+                       "over_dec": float(o.price_decimal.iloc[0]), "under_dec": float(u.price_decimal.iloc[0]),
+                       "over_american": int(o.price_american.iloc[0]), "under_american": int(u.price_american.iloc[0]),
+                       "over_fair": po / (po + pu), "under_fair": pu / (po + pu)}
+                if book in NON_BETTABLE_BOOKS:
+                    # keep the sharp book's main line (the alternate priced closest to even money)
+                    if book == SHARP_BOOK and (sharp is None or abs(row["over_dec"] - row["under_dec"]) < abs(sharp["over_dec"] - sharp["under_dec"])):
+                        sharp = row
+                    continue
+                books.append(row)
             if not books:
                 continue
             consensus_line = float(np.median([b["line"] for b in books]))
@@ -154,6 +160,18 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                                open_line=open_line, weather=wx, injury=inj, injury_data_available=injury_data_available,
                                opponent=f.opponent, team=f.team, is_home=bool(f.is_home))
             base_factors = build_factors(**factors_ctx) if is_qb else build_skill_factors(market=market, position=f.position, **factors_ctx)
+            sharp_diff = None
+            if sharp is not None:
+                sharp_diff = sharp["line"] - consensus_line     # >0: the sharp book expects MORE than the US books
+                unit = 0.5 if market == "player_receptions" else 1.0
+                # Pinnacle's own lean at its line (no-vig over prob) sharpens the read when the lines match
+                lean = sharp["over_fair"] - 0.5
+                imp = 1 if sharp_diff >= unit or (abs(sharp_diff) < unit and lean >= 0.02) else (-1 if sharp_diff <= -unit or (abs(sharp_diff) < unit and lean <= -0.02) else 0)
+                base_factors.insert(0, {"factor": "sharp_line", "value": round(sharp_diff, 1), "impact_over": imp,
+                                        "magnitude": min(abs(sharp_diff) / (unit * 4), 1) * 0.8 + 0.1,
+                                        "text": f"Pinnacle (sharp) line {sharp['line']:g} at {american(sharp['over_dec'])}/{american(sharp['under_dec'])} vs US consensus {consensus_line:g}"
+                                                + (f" — sharp market {'higher' if sharp_diff > 0 else 'lower'} by {abs(sharp_diff):g}" if abs(sharp_diff) >= unit else " — agrees with the US books"),
+                                        "source": {"table": "odds_lines", "key": "pinnacle"}})
             proj_rows.append({
                 "model_run_id": run_id, "season": season, "week": wk, "game_id": f.game_id, "player_id": f.player_id,
                 "player_name": f.player_name, "team": f.team, "opponent": f.opponent, "market": MARKET,
@@ -180,6 +198,10 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                 factors.sort(key=lambda x: -abs(x.get("magnitude", 0)))
                 conf = (confidence_score(X_row, c, open_line, wx, inj, injury_data_available, len(books), side) if is_qb
                         else skill_confidence(X_row, c, open_line, wx, inj, injury_data_available, len(books), side, market))
+                if sharp_diff is not None:
+                    # the sharpest book agreeing with the pick's direction is worth something; disagreeing costs more
+                    sf = base_factors[0]["impact_over"] * (1 if side == "Over" else -1)
+                    conf = int(max(0, min(100, conf + (4 if sf > 0 else -6 if sf < 0 else 0))))
                 card_rows.append({
                     "season": season, "week": wk, "game_id": f.game_id,
                     "event_id": pl.event_id.iloc[0], "player_id": f.player_id, "player_name": f.player_name,
@@ -190,7 +212,8 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                     "ev_per_unit": c["ev"], "confidence": int(conf), "score": c["edge"] * conf,
                     "published": bool(c["edge"] >= PUBLISH_MIN_EDGE and conf >= PUBLISH_MIN_CONFIDENCE),
                     "factors": factors, "line_open": open_line, "line_open_snapshot_id": open_id,
-                    "book_prices": [{"book": b["book"], "line": b["line"], "over": b["over_american"], "under": b["under_american"]} for b in books],
+                    "book_prices": [{"book": b["book"], "line": b["line"], "over": b["over_american"], "under": b["under_american"]} for b in books]
+                                   + ([{"book": sharp["book"], "line": sharp["line"], "over": sharp["over_american"], "under": sharp["under_american"]}] if sharp else []),
                     "_proj_idx": len(proj_rows) - 1,
                 })
 
