@@ -33,7 +33,7 @@ export async function GET() {
     return [
       kick.toLocaleDateString("en-CA", { timeZone: "America/New_York" }), r.week, mk[r.market] ?? r.market, bet, r.team, r.opponent,
       r.side, r.line ?? "", dec.toFixed(3), r.price_american, r.book, p.toFixed(4), Number(r.market_prob).toFixed(4),
-      Number(r.edge).toFixed(4), r.confidence, Number(r.edge) >= barFor(r.market) ? "flagged" : "paper", Math.max(kellyStake(p, dec), 0.25).toFixed(2),
+      Number(r.edge).toFixed(4), r.confidence, Number(r.edge) >= barFor(r.market) ? "flagged" : "paper", Math.max(kellyStake(p, dec), 0.1).toFixed(2),
       r.result ?? "", r.actual ?? "", r.clv_prob == null ? "" : Number(r.clv_prob).toFixed(4),
       kick.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
       r.id, new Date(r.created_at).toISOString(),

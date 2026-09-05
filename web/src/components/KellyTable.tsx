@@ -22,8 +22,8 @@ export function KellyTable({ cards }: { cards: Card[] }) {
       .map((c) => {
         const p = c.prob_calibrated != null ? Number(c.prob_calibrated) : Number(c.model_prob), dec = Number(c.price_decimal);
         const full = kellyFull(p, dec);
-        const stake = Math.min(Math.round(Math.min(full * fraction, cap / 100) * bankroll * 4) / 4, bankroll);
-        return { c, p, dec, full, stake: stake >= 0.25 ? stake : 0, ev: p * (dec - 1) - (1 - p) };
+        const stake = Math.min(Math.round(Math.min(full * fraction, cap / 100) * bankroll * 20) / 20, bankroll);
+        return { c, p, dec, full, stake: stake >= 0.1 ? stake : 0, ev: p * (dec - 1) - (1 - p) };
       })
       .filter((r) => r.full > 0)
       .sort((a, b) => b.stake - a.stake || b.full - a.full);

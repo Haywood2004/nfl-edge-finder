@@ -31,8 +31,8 @@ export function Screener({ cards }: { cards: Card[] }) {
   const stakeFor = (p: number, dec: number) => {
     const f = kellyFull(p, dec);
     if (f <= 0) return 0;
-    const st = Math.round(Math.min(f * fraction, cap / 100) * bankroll * 4) / 4;
-    return st >= 0.25 ? st : 0;
+    const st = Math.round(Math.min(f * fraction, cap / 100) * bankroll * 20) / 20;
+    return st >= 0.1 ? st : 0;
   };
   const clears = (c: Card) => Number(c.edge) >= (edgeReq === "" ? barFor(c.market) : Number(edgeReq) / 100) && c.confidence >= confReq;
 
@@ -172,7 +172,7 @@ export function Screener({ cards }: { cards: Card[] }) {
       )}
       <p className="text-[12px] text-dim">
         Edge = model probability − fair probability at the best price; the publish bars are set on it. Real edge = the same bet after a calibration model, fit on every graded bet (≈16k from the closing-line backtests plus every live result as it is graded), shrinks the raw edge by situation — on average only about a third of a raw edge survives the market. Confidence = the rule-based trust score (sample size, role stability, injury/weather data, line movement, sharp-book agreement).
-        Stake = min(full Kelly × fraction, cap) × bankroll, rounded to ¼u. The paper-bet record and the Google Sheet always use the defaults (market bars, confidence 55, ¼-Kelly, 100u, 3% cap) so the track record stays reproducible; the settings above only change what you see here. Click a row for the reasons.
+        Stake = min(full Kelly × fraction, cap) × bankroll, rounded to 0.05u (under 0.1u shows as –). The paper-bet record and the Google Sheet always use the defaults (market bars, confidence 55, ¼-Kelly, 100u, 3% cap) so the track record stays reproducible; the settings above only change what you see here. Click a row for the reasons.
       </p>
     </div>
   );
