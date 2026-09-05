@@ -19,22 +19,32 @@ export async function GET() {
              c.*, g.result, g.actual, g.profit_units, g.clv_prob
       FROM cards c LEFT JOIN grades g ON g.card_id = c.id
       WHERE c.edge >= ${PAPER_MIN_EDGE} AND c.confidence >= ${MIN_CONF} AND c.created_at < c.kickoff_utc
-      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at ASC)
-    SELECT * FROM q ORDER BY kickoff_utc, market, player_name`;
+      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at ASC),
+    latest AS (
+      SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side)
+             c.season, c.week, c.market, c.player_name, c.side, c.prob_calibrated - c.market_prob AS edge_cal_latest
+      FROM cards c WHERE c.prob_calibrated IS NOT NULL
+      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at DESC)
+    SELECT q.*,
+           -- cards locked before the calibrator existed borrow the latest calibrated shrink for the same pick
+           COALESCE(q.edge_calibrated, l.edge_cal_latest) AS edge_calibrated_eff,
+           COALESCE(q.prob_calibrated, q.market_prob + l.edge_cal_latest) AS prob_calibrated_eff
+    FROM q LEFT JOIN latest l USING (season, week, market, player_name, side)
+    ORDER BY kickoff_utc, market, player_name`;
   const head = ["date", "week", "market", "bet", "team", "opponent", "side", "line", "odds_decimal", "odds_american", "book",
     "model_prob", "market_prob", "edge", "confidence", "tier", "unit_size", "result", "actual", "clv", "kickoff_et", "card_id", "locked_at",
     "kelly_full_pct", "kelly_fraction", "bankroll_units", "edge_calibrated", "prob_calibrated"];
   const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const mk: Record<string, string> = { player_pass_yds: "Pass Yds", player_reception_yds: "Rec Yds", player_rush_yds: "Rush Yds", player_receptions: "Receptions", h2h: "Moneyline" };
   // week-level exposure scaling: same rule as the screener, applied to the flagged (tier) bets of each week
-  const stakeRaw = (r: (typeof rows)[number]) => kellyStake(r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob), Number(r.price_decimal));
+  const stakeRaw = (r: (typeof rows)[number]) => kellyStake(r.prob_calibrated_eff != null ? Number(r.prob_calibrated_eff) : Number(r.model_prob), Number(r.price_decimal));
   const weekScale: Record<string, number> = {};
   for (const wk of new Set(rows.map((r) => `${r.season}-${r.week}`))) {
     const inWeek = rows.filter((r) => `${r.season}-${r.week}` === wk);
     weekScale[wk] = exposureScale(inWeek.map(stakeRaw));
   }
   const lines = rows.map((r) => {
-    const dec = Number(r.price_decimal), p = r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob);
+    const dec = Number(r.price_decimal), p = r.prob_calibrated_eff != null ? Number(r.prob_calibrated_eff) : Number(r.model_prob);
     const scaled = Math.max(Math.round(stakeRaw(r) * weekScale[`${r.season}-${r.week}`] * 20) / 20, 0.1);
     const bet = r.market === "h2h" ? `${r.player_name} ML` : `${r.player_name} ${r.side} ${r.line}`;
     const kick = new Date(r.kickoff_utc);
@@ -46,7 +56,7 @@ export async function GET() {
       kick.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
       r.id, new Date(r.created_at).toISOString(),
       (kellyFull(p, dec) * 100).toFixed(2), DEFAULT_FRACTION, DEFAULT_BANKROLL,
-      r.edge_calibrated == null ? "" : Number(r.edge_calibrated).toFixed(4), r.prob_calibrated == null ? "" : Number(r.prob_calibrated).toFixed(4),
+      r.edge_calibrated_eff == null ? "" : Number(r.edge_calibrated_eff).toFixed(4), r.prob_calibrated_eff == null ? "" : Number(r.prob_calibrated_eff).toFixed(4),
     ].map(esc).join(",");
   });
   return new Response([head.join(","), ...lines].join("\n") + "\n", {
