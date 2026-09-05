@@ -72,6 +72,12 @@ def _backtest_rows() -> pd.DataFrame:
     out = []
     for m in MARKETS:
         p = ARTIFACT_DIR / f"backtest_{m}.parquet"
+        if not p.exists():   # stateless runner: rebuild the bet table from the committed closing-line fixtures
+            try:
+                from .backtest_lines import run as backtest_run
+                backtest_run(grid=False, market=m)
+            except Exception as e:
+                print(f"[calibration] no backtest rows for {m}: {e}"); continue
         if not p.exists():
             continue
         b = pd.read_parquet(p)
