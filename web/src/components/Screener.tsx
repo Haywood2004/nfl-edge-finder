@@ -4,7 +4,9 @@ import Link from "next/link";
 import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, pct, signedPct } from "@/lib/format";
 import { barFor, MIN_CONF } from "@/lib/thresholds";
-import { kellyStake, DEFAULT_BANKROLL, DEFAULT_FRACTION } from "@/lib/kelly";
+import { kellyFull, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT } from "@/lib/kelly";
+
+const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half Kelly"], [0.25, "Quarter Kelly (default)"], [0.125, "Eighth Kelly"]] as const;
 
 type SortKey = "score" | "edge" | "confidence" | "stake" | "kickoff";
 
@@ -15,15 +17,28 @@ export function Screener({ cards }: { cards: Card[] }) {
   const [team, setTeam] = useState("");
   const [minEdge, setMinEdge] = useState(0);
   const [minConf, setMinConf] = useState(0);
+  // bet requirement: "" = each market's backtested bar; a number overrides it for every market
+  const [edgeReq, setEdgeReq] = useState<string>("");
+  const [confReq, setConfReq] = useState(MIN_CONF);
+  // Kelly settings (the paper-bet feed / Google Sheet always use the defaults so the record is reproducible)
+  const [bankroll, setBankroll] = useState(DEFAULT_BANKROLL);
+  const [fraction, setFraction] = useState<number>(DEFAULT_FRACTION);
+  const [cap, setCap] = useState(MAX_STAKE_PCT * 100);
   const [sort, setSort] = useState<SortKey>("score");
   const [open, setOpen] = useState<number | null>(null);
+  const stakeFor = (p: number, dec: number) => {
+    const f = kellyFull(p, dec);
+    if (f <= 0) return 0;
+    const st = Math.round(Math.min(f * fraction, cap / 100) * bankroll * 4) / 4;
+    return st >= 0.25 ? st : 0;
+  };
+  const clears = (c: Card) => Number(c.edge) >= (edgeReq === "" ? barFor(c.market) : Number(edgeReq) / 100) && c.confidence >= confReq;
 
   const markets = useMemo(() => [...new Set(cards.map((c) => c.market))], [cards]);
   const teams = useMemo(() => [...new Set(cards.flatMap((c) => [c.team, c.opponent]))].sort(), [cards]);
 
   const rows = useMemo(() => cards
-    .map((c) => ({ c, stake: kellyStake(Number(c.model_prob), Number(c.price_decimal), DEFAULT_BANKROLL, DEFAULT_FRACTION),
-      isBet: Number(c.edge) >= barFor(c.market) && c.confidence >= MIN_CONF }))
+    .map((c) => ({ c, stake: stakeFor(Number(c.model_prob), Number(c.price_decimal)), isBet: clears(c) }))
     .filter(({ c, isBet }) => (!betsOnly || isBet) && (!market || c.market === market) && (!team || c.team === team || c.opponent === team)
       && Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
     .sort((a, b) =>
@@ -31,15 +46,56 @@ export function Screener({ cards }: { cards: Card[] }) {
         : sort === "edge" ? Number(b.c.edge) - Number(a.c.edge)
         : sort === "confidence" ? b.c.confidence - a.c.confidence
         : sort === "stake" ? b.stake - a.stake
-        : Number(b.c.score) - Number(a.c.score)), [cards, betsOnly, market, team, minEdge, minConf, sort]);
+        : Number(b.c.score) - Number(a.c.score)), [cards, betsOnly, market, team, minEdge, minConf, sort, edgeReq, confReq, bankroll, fraction, cap]);
 
-  const total = rows.filter((r) => r.isBet).reduce((s, r) => s + r.stake, 0);
+  const betRows = rows.filter((r) => r.isBet);
+  const total = betRows.reduce((s, r) => s + r.stake, 0);
+  const expected = betRows.reduce((s, r) => s + r.stake * (Number(r.c.model_prob) * (Number(r.c.price_decimal) - 1) - (1 - Number(r.c.model_prob))), 0);
+  const nBets = cards.filter(clears).length;
   const sel = "select";
   return (
     <div className="space-y-3">
+      <div className="card flex min-w-0 flex-wrap items-end gap-x-4 gap-y-3 overflow-hidden p-4 text-[13px]">
+        <div>
+          <p className="eyebrow mb-1.5">What counts as a bet</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-[12px] text-muted">Edge requirement
+              <select className={sel} value={edgeReq} onChange={(e) => setEdgeReq(e.target.value)}>
+                <option value="">Market bars — passing 6%, others 8% (backtested)</option>
+                {[4, 5, 6, 8, 10, 12, 15].map((v) => <option key={v} value={v}>≥ {v}% every market</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[12px] text-muted">Min confidence
+              <input type="number" className={`${sel} w-20`} value={confReq} min={0} max={100} onChange={(e) => setConfReq(+e.target.value)} />
+            </label>
+          </div>
+        </div>
+        <div>
+          <p className="eyebrow mb-1.5">Stake sizing (Kelly)</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-[12px] text-muted">Bankroll (units)
+              <input type="number" className={`${sel} w-24`} value={bankroll} min={1} onChange={(e) => setBankroll(Math.max(1, +e.target.value))} />
+            </label>
+            <label className="flex flex-col gap-1 text-[12px] text-muted">Kelly fraction
+              <select className={sel} value={fraction} onChange={(e) => setFraction(+e.target.value)}>
+                {FRACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[12px] text-muted">Cap per bet (% of bankroll)
+              <input type="number" className={`${sel} w-20`} value={cap} min={0.5} max={25} step={0.5} onChange={(e) => setCap(+e.target.value)} />
+            </label>
+          </div>
+        </div>
+        <div className="grid w-full grid-cols-3 gap-2 text-center sm:ml-auto sm:w-auto">
+          <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Bets</div><div className="text-lg font-semibold tnum">{nBets}</div></div>
+          <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Staked</div><div className="text-lg font-semibold tnum">{total.toFixed(2)}u</div><div className="kpi-sub">{pct(total / bankroll, 1)} of bankroll</div></div>
+          <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Expected</div><div className={`text-lg font-semibold tnum ${expected >= 0 ? "text-up" : "text-down"}`}>{expected >= 0 ? "+" : ""}{expected.toFixed(2)}u</div><div className="kpi-sub">if the model is right</div></div>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
         <div className="flex rounded-lg border border-border bg-panel-2 p-0.5">
-          <button onClick={() => setBetsOnly(true)} className={`rounded-md px-3 py-1.5 font-medium ${betsOnly ? "bg-panel-3 text-fg" : "text-muted"}`}>Bets ({cards.filter((c) => Number(c.edge) >= barFor(c.market) && c.confidence >= MIN_CONF).length})</button>
+          <button onClick={() => setBetsOnly(true)} className={`rounded-md px-3 py-1.5 font-medium ${betsOnly ? "bg-panel-3 text-fg" : "text-muted"}`}>Bets ({nBets})</button>
           <button onClick={() => setBetsOnly(false)} className={`rounded-md px-3 py-1.5 font-medium ${!betsOnly ? "bg-panel-3 text-fg" : "text-muted"}`}>Everything priced ({cards.length})</button>
         </div>
         <select className={sel} value={market} onChange={(e) => setMarket(e.target.value)}>
@@ -90,7 +146,7 @@ export function Screener({ cards }: { cards: Card[] }) {
                     <td>{pct(Number(c.model_prob), 1)}</td>
                     <td className="text-muted">{pct(Number(c.market_prob), 1)}</td>
                     <td className={`font-semibold ${isBet ? "text-up" : ""}`}>{signedPct(Number(c.edge))}</td>
-                    <td className={c.confidence >= MIN_CONF ? "" : "text-muted"}>{c.confidence}</td>
+                    <td className={c.confidence >= confReq ? "" : "text-muted"}>{c.confidence}</td>
                     <td className="font-semibold">{isBet && stake > 0 ? `${stake.toFixed(2)}u` : <span className="text-dim">–</span>}</td>
                     <td className="whitespace-nowrap text-muted">{kickoff(c.kickoff_utc)}</td>
                     <td><Link href={c.href ?? `/cards/${c.id}`} className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>detail</Link></td>
@@ -112,8 +168,8 @@ export function Screener({ cards }: { cards: Card[] }) {
         </div>
       )}
       <p className="text-[12px] text-dim">
-        {betsOnly ? `${rows.length} bets · ${total.toFixed(2)}u total at ¼-Kelly on 100u. ` : ""}
-        Edge = model probability − fair probability at the best price. Confidence = how much to trust that edge (sample size, role stability, injury/weather data, line movement). Stake = ¼-Kelly on a 100u bankroll, capped at 3% per bet — <Link href="/kelly" className="text-accent hover:underline">change bankroll or fraction</Link>. Click a row for the reasons.
+        Edge = model probability − fair probability at the best price. Confidence = how much to trust that edge (sample size, role stability, injury/weather data, line movement).
+        Stake = min(full Kelly × fraction, cap) × bankroll, rounded to ¼u. The paper-bet record and the Google Sheet always use the defaults (market bars, confidence 55, ¼-Kelly, 100u, 3% cap) so the track record stays reproducible; the settings above only change what you see here. Click a row for the reasons.
       </p>
     </div>
   );
