@@ -26,6 +26,8 @@ export function Screener({ cards }: { cards: Card[] }) {
   const [cap, setCap] = useState(MAX_STAKE_PCT * 100);
   const [sort, setSort] = useState<SortKey>("score");
   const [open, setOpen] = useState<number | null>(null);
+  // Kelly is sized off the CALIBRATED probability when available — raw model edges overstate realised edge ~3×
+  const pFor = (c: Card) => (c.prob_calibrated != null ? Number(c.prob_calibrated) : Number(c.model_prob));
   const stakeFor = (p: number, dec: number) => {
     const f = kellyFull(p, dec);
     if (f <= 0) return 0;
@@ -38,7 +40,7 @@ export function Screener({ cards }: { cards: Card[] }) {
   const teams = useMemo(() => [...new Set(cards.flatMap((c) => [c.team, c.opponent]))].sort(), [cards]);
 
   const rows = useMemo(() => cards
-    .map((c) => ({ c, stake: stakeFor(Number(c.model_prob), Number(c.price_decimal)), isBet: clears(c) }))
+    .map((c) => ({ c, stake: stakeFor(pFor(c), Number(c.price_decimal)), isBet: clears(c) }))
     .filter(({ c, isBet }) => (!betsOnly || isBet) && (!market || c.market === market) && (!team || c.team === team || c.opponent === team)
       && Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
     .sort((a, b) =>
@@ -50,7 +52,7 @@ export function Screener({ cards }: { cards: Card[] }) {
 
   const betRows = rows.filter((r) => r.isBet);
   const total = betRows.reduce((s, r) => s + r.stake, 0);
-  const expected = betRows.reduce((s, r) => s + r.stake * (Number(r.c.model_prob) * (Number(r.c.price_decimal) - 1) - (1 - Number(r.c.model_prob))), 0);
+  const expected = betRows.reduce((s, r) => s + r.stake * (pFor(r.c) * (Number(r.c.price_decimal) - 1) - (1 - pFor(r.c))), 0);
   const nBets = cards.filter(clears).length;
   const sel = "select";
   return (
@@ -126,7 +128,7 @@ export function Screener({ cards }: { cards: Card[] }) {
       ) : (
         <div className="card overflow-x-auto p-0">
           <table className="data text-[13px]">
-            <thead><tr><th>Bet</th><th>Price</th><th>Model</th><th>Fair</th><th>Edge</th><th>Conf</th><th title="¼-Kelly on a 100-unit bankroll, capped at 3%">Stake</th><th>Kick</th><th></th></tr></thead>
+            <thead><tr><th>Bet</th><th>Price</th><th>Model</th><th>Fair</th><th title="Model probability − fair probability. The publish bars are set on this number.">Edge</th><th title="What history says survives: a calibration model fit on ~16k graded bets shrinks the raw edge by situation. Kelly sizes off this.">Real edge</th><th>Conf</th><th title="Kelly on the calibrated probability">Stake</th><th>Kick</th><th></th></tr></thead>
             <tbody>
               {rows.map(({ c, stake, isBet }) => {
                 const over = c.side === "Over";
@@ -146,6 +148,7 @@ export function Screener({ cards }: { cards: Card[] }) {
                     <td>{pct(Number(c.model_prob), 1)}</td>
                     <td className="text-muted">{pct(Number(c.market_prob), 1)}</td>
                     <td className={`font-semibold ${isBet ? "text-up" : ""}`}>{signedPct(Number(c.edge))}</td>
+                    <td className={c.edge_calibrated == null ? "text-dim" : Number(c.edge_calibrated) > 0 ? "text-up" : "text-down"}>{c.edge_calibrated == null ? "–" : signedPct(Number(c.edge_calibrated))}</td>
                     <td className={c.confidence >= confReq ? "" : "text-muted"}>{c.confidence}</td>
                     <td className="font-semibold">{isBet && stake > 0 ? `${stake.toFixed(2)}u` : <span className="text-dim">–</span>}</td>
                     <td className="whitespace-nowrap text-muted">{kickoff(c.kickoff_utc)}</td>
@@ -153,7 +156,7 @@ export function Screener({ cards }: { cards: Card[] }) {
                   </tr>,
                   open === c.id && (
                     <tr key={`${c.id}-why`} className="bg-panel-2/40">
-                      <td colSpan={9} className="text-[12px]">
+                      <td colSpan={10} className="text-[12px]">
                         <ul className="space-y-1 py-1">
                           {top.map((f, i) => <li key={i}><span className={f.impact === "+" ? "text-up" : "text-down"}>{f.impact === "+" ? "▲" : "▼"}</span> {f.text}</li>)}
                           {c.factors.find((f) => f.factor === "projection") && <li className="text-muted">▬ {c.factors.find((f) => f.factor === "projection")!.text}</li>}
@@ -168,7 +171,7 @@ export function Screener({ cards }: { cards: Card[] }) {
         </div>
       )}
       <p className="text-[12px] text-dim">
-        Edge = model probability − fair probability at the best price. Confidence = how much to trust that edge (sample size, role stability, injury/weather data, line movement).
+        Edge = model probability − fair probability at the best price; the publish bars are set on it. Real edge = the same bet after a calibration model, fit on every graded bet (≈16k from the closing-line backtests plus every live result as it is graded), shrinks the raw edge by situation — on average only about a third of a raw edge survives the market. Confidence = the rule-based trust score (sample size, role stability, injury/weather data, line movement, sharp-book agreement).
         Stake = min(full Kelly × fraction, cap) × bankroll, rounded to ¼u. The paper-bet record and the Google Sheet always use the defaults (market bars, confidence 55, ¼-Kelly, 100u, 3% cap) so the track record stays reproducible; the settings above only change what you see here. Click a row for the reasons.
       </p>
     </div>

@@ -14,6 +14,8 @@ export type Card = {
   trend_badges: string[]; home_team: string; away_team: string;
   /** "blend" (default, what the pipeline publishes) or "raw" (synthetic card from the un-anchored ratings model) */
   basis?: "blend" | "raw"; href?: string;
+  /** learned shrinkage (models/calibration.py): null until the calibrator has been trained */
+  prob_calibrated: number | null; edge_calibrated: number | null;
 };
 
 /** Cards from the most recent scoring run for the current target week. */
@@ -184,7 +186,7 @@ export function rawMoneylineCards(games: GameProjection[]): Card[] {
         book: best.book, snapshot_id: 0, projection_id: 0, model_run_id: 0, model_prob: p, market_prob: fair, edge,
         ev_per_unit: ev, confidence: 30, score: edge * 30, published: false,
         factors: [explain, ...factors], line_open: null, book_prices: [], trend_badges: [],
-        home_team: g.home_team, away_team: g.away_team, basis: "raw", href: `/games/${g.game_id}`,
+        home_team: g.home_team, away_team: g.away_team, basis: "raw", href: `/games/${g.game_id}`, prob_calibrated: null, edge_calibrated: null,
       });
     }
   }

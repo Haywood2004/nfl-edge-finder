@@ -23,11 +23,11 @@ export async function GET() {
     SELECT * FROM q ORDER BY kickoff_utc, market, player_name`;
   const head = ["date", "week", "market", "bet", "team", "opponent", "side", "line", "odds_decimal", "odds_american", "book",
     "model_prob", "market_prob", "edge", "confidence", "tier", "unit_size", "result", "actual", "clv", "kickoff_et", "card_id", "locked_at",
-    "kelly_full_pct", "kelly_fraction", "bankroll_units"];
+    "kelly_full_pct", "kelly_fraction", "bankroll_units", "edge_calibrated", "prob_calibrated"];
   const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const mk: Record<string, string> = { player_pass_yds: "Pass Yds", player_reception_yds: "Rec Yds", player_rush_yds: "Rush Yds", player_receptions: "Receptions", h2h: "Moneyline" };
   const lines = rows.map((r) => {
-    const dec = Number(r.price_decimal), p = Number(r.model_prob);
+    const dec = Number(r.price_decimal), p = r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob);
     const bet = r.market === "h2h" ? `${r.player_name} ML` : `${r.player_name} ${r.side} ${r.line}`;
     const kick = new Date(r.kickoff_utc);
     return [
@@ -38,6 +38,7 @@ export async function GET() {
       kick.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
       r.id, new Date(r.created_at).toISOString(),
       (kellyFull(p, dec) * 100).toFixed(2), DEFAULT_FRACTION, DEFAULT_BANKROLL,
+      r.edge_calibrated == null ? "" : Number(r.edge_calibrated).toFixed(4), r.prob_calibrated == null ? "" : Number(r.prob_calibrated).toFixed(4),
     ].map(esc).join(",");
   });
   return new Response([head.join(","), ...lines].join("\n") + "\n", {

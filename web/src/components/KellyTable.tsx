@@ -20,7 +20,7 @@ export function KellyTable({ cards }: { cards: Card[] }) {
     return cards
       .filter((c) => (!betsOnly || (Number(c.edge) >= barFor(c.market) && c.confidence >= 55)) && Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
       .map((c) => {
-        const p = Number(c.model_prob), dec = Number(c.price_decimal);
+        const p = c.prob_calibrated != null ? Number(c.prob_calibrated) : Number(c.model_prob), dec = Number(c.price_decimal);
         const full = kellyFull(p, dec);
         const stake = Math.min(Math.round(Math.min(full * fraction, cap / 100) * bankroll * 4) / 4, bankroll);
         return { c, p, dec, full, stake: stake >= 0.25 ? stake : 0, ev: p * (dec - 1) - (1 - p) };

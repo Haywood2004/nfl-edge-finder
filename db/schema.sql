@@ -372,6 +372,8 @@ ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_rushing_yards numer
 ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_targets numeric;
 ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_carries numeric;
 CREATE INDEX IF NOT EXISTS feat_player_game_pos ON feat_player_game(position, season, week);
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS prob_calibrated numeric;   -- learned shrinkage of model_prob (models/calibration.py)
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS edge_calibrated numeric;
 CREATE INDEX IF NOT EXISTS feat_player_game_sw ON feat_player_game(season, week);
 
 -- ---------------------------------------------------------------------------

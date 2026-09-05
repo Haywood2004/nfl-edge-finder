@@ -30,6 +30,9 @@ def main(argv=None):
         from .models.backtest_lines import run
         for m in (a.markets or ["player_pass_yds"]):
             run(a.seasons or None, market=m)
+    elif a.job == "train_cal":        # learned edge calibration from backtests + graded live cards
+        from .models.calibration import train as train_cal
+        train_cal()
     elif a.job == "train_props":      # receiving yards, receptions, rushing yards
         from .models.player_props import train as train_prop, SPECS
         for m in [x for x in a.markets if x in SPECS]:
@@ -70,9 +73,14 @@ def main(argv=None):
     elif a.job == "score_ml":
         from .scoring.moneyline_cards import score_moneylines
         score_moneylines(a.week)
-    elif a.job == "grade":
+    elif a.job == "grade":            # Tuesday morning: grade, then let the results re-fit the calibration
         from .grading.grade import grade_cards
         grade_cards()
+        from .models.calibration import train as train_cal
+        try:
+            train_cal()
+        except Exception as e:
+            print(f"[grade] calibration retrain skipped: {e}")
     elif a.job == "ingest_nflverse":
         ingest.ingest_schedule(); ingest.ingest_pbp(a.seasons); ingest.ingest_weekly_stats(a.seasons)
         ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
@@ -92,6 +100,8 @@ def main(argv=None):
         build_features(); train_ml(); train_py()
         for m in SPECS:
             train_prop(m)
+        from .models.calibration import train as train_cal
+        train_cal()
         score_week(); score_moneylines()
     elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
         ingest.ingest_injuries(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_weather()

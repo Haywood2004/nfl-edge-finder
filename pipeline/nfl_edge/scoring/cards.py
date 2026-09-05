@@ -20,6 +20,7 @@ from ..models.player_props import load_latest as load_latest_prop, SPECS
 from ..sources.odds_api import american
 from .factors import build_factors, confidence_score
 from .skill_factors import build_skill_factors, skill_confidence
+from ..models.calibration import load_latest as load_calibrator, featurize as cal_featurize
 
 LEAGUE_IMPLIED = 22.0
 
@@ -68,6 +69,7 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
     if snap_id is None:
         print(f"[score:{market}] no odds snapshot for {season} wk{wk}; nothing to score")
         return 0
+    calibrator = load_calibrator()   # None until `train_cal` has run; cards then carry raw edge only
     open_id = _open_snapshot(season, wk, MARKET)
 
     with db.JobRun(f"score:{market}") as run:
@@ -198,10 +200,16 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                 factors.sort(key=lambda x: -abs(x.get("magnitude", 0)))
                 conf = (confidence_score(X_row, c, open_line, wx, inj, injury_data_available, len(books), side) if is_qb
                         else skill_confidence(X_row, c, open_line, wx, inj, injury_data_available, len(books), side, market))
+                sf = 0
                 if sharp_diff is not None:
                     # the sharpest book agreeing with the pick's direction is worth something; disagreeing costs more
                     sf = base_factors[0]["impact_over"] * (1 if side == "Over" else -1)
                     conf = int(max(0, min(100, conf + (4 if sf > 0 else -6 if sf < 0 else 0))))
+                p_cal, edge_cal = None, None
+                if calibrator is not None:
+                    row = cal_featurize(market, float(c["edge"]), used_mean, float(f["sd"]), float(c["line"]), side, X_row, sf)
+                    p_cal = float(calibrator.p_win([row])[0])
+                    edge_cal = p_cal - float(c["market_prob"])
                 card_rows.append({
                     "season": season, "week": wk, "game_id": f.game_id,
                     "event_id": pl.event_id.iloc[0], "player_id": f.player_id, "player_name": f.player_name,
@@ -210,6 +218,7 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                     "price_decimal": c["dec"], "book": c["book"], "snapshot_id": snap_id, "model_run_id": run_id,
                     "model_prob": c["model_prob"], "market_prob": c["market_prob"], "edge": c["edge"],
                     "ev_per_unit": c["ev"], "confidence": int(conf), "score": c["edge"] * conf,
+                    "prob_calibrated": p_cal, "edge_calibrated": edge_cal,
                     "published": bool(c["edge"] >= PUBLISH_MIN_EDGE and conf >= PUBLISH_MIN_CONFIDENCE),
                     "factors": factors, "line_open": open_line, "line_open_snapshot_id": open_id,
                     "book_prices": [{"book": b["book"], "line": b["line"], "over": b["over_american"], "under": b["under_american"]} for b in books]
