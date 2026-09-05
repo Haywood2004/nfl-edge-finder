@@ -207,7 +207,7 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                     conf = int(max(0, min(100, conf + (4 if sf > 0 else -6 if sf < 0 else 0))))
                 p_cal, edge_cal = None, None
                 if calibrator is not None:
-                    row = cal_featurize(market, float(c["edge"]), used_mean, float(f["sd"]), float(c["line"]), side, X_row, sf)
+                    row = cal_featurize(market, float(c["edge"]), used_mean, float(f["sd"]), float(c["line"]), side, X_row, sf, float(c["market_prob"]))
                     p_cal = float(calibrator.p_win([row])[0])
                     edge_cal = p_cal - float(c["market_prob"])
                 card_rows.append({

@@ -34,7 +34,7 @@ VERSION = "cal-logit-v1"
 MARKETS = ["player_pass_yds", "player_reception_yds", "player_receptions", "player_rush_yds"]
 USAGE_COL = {"player_pass_yds": "att_ewm", "player_reception_yds": "tgt_ewm", "player_receptions": "tgt_ewm", "player_rush_yds": "car_ewm"}
 USAGE_SCALE = {"player_pass_yds": 35.0, "player_reception_yds": 8.0, "player_receptions": 8.0, "player_rush_yds": 15.0}
-FEATURES = ["edge", "edge_sq", "abs_z", "is_over", "games_career_lt8", "games_career_lt20", "new_team", "opp_no_data",
+FEATURES = ["fair", "fair_logit", "edge", "edge_sq", "abs_z", "is_over", "games_career_lt8", "games_career_lt20", "new_team", "opp_no_data",
             "new_hc", "injury_seen", "week_early", "usage_norm", "sharp_agree", "sharp_disagree",
             "m_recy", "m_rec", "m_ruy"]
 
@@ -47,11 +47,15 @@ def _norm(s):
 
 
 def featurize(market: str, edge: float, mean_used: float, sd: float, line: float, side: str, X: dict,
-              sharp_lean: int = 0) -> dict:
-    """One row of calibration features from a card's context. sharp_lean: +1 agrees with side, −1 disagrees, 0 n/a."""
+              sharp_lean: int = 0, fair: float = 0.5) -> dict:
+    """One row of calibration features from a card's context. sharp_lean: +1 agrees with side, −1 disagrees, 0 n/a.
+    `fair` = the no-vig market probability of the side — essential: a +140 side with the same raw edge as a −110 side
+    wins far less often, and Kelly needs P(win), not P(win) minus a constant."""
     g = lambda k, d=0.0: (X.get(k) if X.get(k) is not None else d)
     career = g("games_career")
+    fair = min(max(float(fair), 0.02), 0.98)
     return {
+        "fair": fair, "fair_logit": float(np.log(fair / (1 - fair))),
         "edge": edge, "edge_sq": edge * edge, "abs_z": abs(mean_used - line) / max(sd, 1e-6),
         "is_over": 1.0 if side == "Over" else 0.0,
         "games_career_lt8": 1.0 if career < 8 else 0.0, "games_career_lt20": 1.0 if career < 20 else 0.0,
@@ -89,7 +93,7 @@ def _backtest_rows() -> pd.DataFrame:
         # the backtest stores sd implicitly via p; recover |z| from the empirical relation is not possible → use edge proxies
         for _, r in j.iterrows():
             X = {k: r[k] for k in need[2:]}
-            f = featurize(m, float(r.edge), float(r.mean_used), 1.0, float(r.line), r.side, X)
+            f = featurize(m, float(r.edge), float(r.mean_used), 1.0, float(r.line), r.side, X, 0, float(r.fair))
             f["abs_z"] = abs(float(r.p) - 0.5) * 4   # monotone stand-in for |z| (p is the model's P(side))
             f["win"] = int(r.win); f["source"] = "backtest"; f["market"] = m
             out.append(f)
@@ -111,7 +115,7 @@ def _live_rows() -> pd.DataFrame:
         lean = 0
         if sharp:
             lean = int(sharp.get("impact_over", 0)) * (1 if x.side == "Over" else -1)
-        f = featurize(x.market, float(x.edge), 0.0, 1.0, 0.0, x.side, X, lean)
+        f = featurize(x.market, float(x.edge), 0.0, 1.0, 0.0, x.side, X, lean, float(x.market_prob))
         f["abs_z"] = abs(float(x.model_prob) - 0.5) * 4
         f["win"] = 1 if x.result == "win" else 0; f["source"] = "live"; f["market"] = x.market
         out.append(f)
@@ -140,7 +144,6 @@ def train(persist: bool = True) -> int | None:
     cal = Calibrator(pipe, int(len(data)), int(len(live)))
     # report: how much of the raw edge survives, by raw-edge bucket
     data["p_cal"] = cal.p_win(data)
-    data["fair"] = 0.5   # bets are ~−110 both ways; fair ≈ 0.5 for reporting purposes
     data["bucket"] = pd.cut(data.edge, [0, .04, .06, .08, .10, .15, 1.0])
     rep = data.groupby("bucket", observed=True).agg(n=("win", "size"), win_rate=("win", "mean"), p_cal=("p_cal", "mean"), raw_edge=("edge", "mean")).reset_index()
     rep["bucket"] = rep.bucket.astype(str)

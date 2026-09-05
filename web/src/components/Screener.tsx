@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, pct, signedPct } from "@/lib/format";
 import { barFor, MIN_CONF } from "@/lib/thresholds";
-import { kellyFull, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT } from "@/lib/kelly";
+import { kellyFull, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT, WEEKLY_EXPOSURE_PCT, exposureScale } from "@/lib/kelly";
 
 const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half Kelly"], [0.25, "Quarter Kelly (default)"], [0.125, "Eighth Kelly"]] as const;
 
@@ -24,6 +24,7 @@ export function Screener({ cards }: { cards: Card[] }) {
   const [bankroll, setBankroll] = useState(DEFAULT_BANKROLL);
   const [fraction, setFraction] = useState<number>(DEFAULT_FRACTION);
   const [cap, setCap] = useState(MAX_STAKE_PCT * 100);
+  const [exposure, setExposure] = useState(WEEKLY_EXPOSURE_PCT * 100);
   const [sort, setSort] = useState<SortKey>("score");
   const [open, setOpen] = useState<number | null>(null);
   // Kelly is sized off the CALIBRATED probability when available — raw model edges overstate realised edge ~3×
@@ -39,8 +40,11 @@ export function Screener({ cards }: { cards: Card[] }) {
   const markets = useMemo(() => [...new Set(cards.map((c) => c.market))], [cards]);
   const teams = useMemo(() => [...new Set(cards.flatMap((c) => [c.team, c.opponent]))].sort(), [cards]);
 
+  // week-level exposure: scale every bet's stake by the same factor so the sum of the BETS stays within budget
+  const scale = useMemo(() => exposureScale(cards.filter(clears).map((c) => stakeFor(pFor(c), Number(c.price_decimal))), bankroll, exposure / 100),
+    [cards, edgeReq, confReq, bankroll, fraction, cap, exposure]);  // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => cards
-    .map((c) => ({ c, stake: stakeFor(pFor(c), Number(c.price_decimal)), isBet: clears(c) }))
+    .map((c) => ({ c, stake: Math.round(stakeFor(pFor(c), Number(c.price_decimal)) * scale * 20) / 20, isBet: clears(c) }))
     .filter(({ c, isBet }) => (!betsOnly || isBet) && (!market || c.market === market) && (!team || c.team === team || c.opponent === team)
       && Number(c.edge) * 100 >= minEdge && c.confidence >= minConf)
     .sort((a, b) =>
@@ -48,7 +52,7 @@ export function Screener({ cards }: { cards: Card[] }) {
         : sort === "edge" ? Number(b.c.edge) - Number(a.c.edge)
         : sort === "confidence" ? b.c.confidence - a.c.confidence
         : sort === "stake" ? b.stake - a.stake
-        : Number(b.c.score) - Number(a.c.score)), [cards, betsOnly, market, team, minEdge, minConf, sort, edgeReq, confReq, bankroll, fraction, cap]);
+        : Number(b.c.score) - Number(a.c.score)), [cards, betsOnly, market, team, minEdge, minConf, sort, edgeReq, confReq, bankroll, fraction, cap, scale]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const betRows = rows.filter((r) => r.isBet);
   const total = betRows.reduce((s, r) => s + r.stake, 0);
@@ -86,11 +90,14 @@ export function Screener({ cards }: { cards: Card[] }) {
             <label className="flex flex-col gap-1 text-[12px] text-muted">Cap per bet (% of bankroll)
               <input type="number" className={`${sel} w-20`} value={cap} min={0.5} max={25} step={0.5} onChange={(e) => setCap(+e.target.value)} />
             </label>
+            <label className="flex flex-col gap-1 text-[12px] text-muted" title="Kelly sizes each bet against the whole bankroll; with many bets in one week the sum would exceed it. Stakes are scaled down together to fit this weekly budget.">Weekly exposure (% of bankroll)
+              <input type="number" className={`${sel} w-20`} value={exposure} min={5} max={200} step={5} onChange={(e) => setExposure(+e.target.value)} />
+            </label>
           </div>
         </div>
         <div className="grid w-full grid-cols-3 gap-2 text-center sm:ml-auto sm:w-auto">
           <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Bets</div><div className="text-lg font-semibold tnum">{nBets}</div></div>
-          <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Staked</div><div className="text-lg font-semibold tnum">{total.toFixed(2)}u</div><div className="kpi-sub">{pct(total / bankroll, 1)} of bankroll</div></div>
+          <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Staked</div><div className="text-lg font-semibold tnum">{total.toFixed(2)}u</div><div className="kpi-sub">{pct(total / bankroll, 1)} of bankroll{scale < 1 ? ` · scaled ×${scale.toFixed(2)}` : ""}</div></div>
           <div className="rounded-lg bg-panel-2/70 px-3 py-1.5"><div className="kpi-label">Expected</div><div className={`text-lg font-semibold tnum ${expected >= 0 ? "text-up" : "text-down"}`}>{expected >= 0 ? "+" : ""}{expected.toFixed(2)}u</div><div className="kpi-sub">if the model is right</div></div>
         </div>
       </div>
@@ -172,7 +179,7 @@ export function Screener({ cards }: { cards: Card[] }) {
       )}
       <p className="text-[12px] text-dim">
         Edge = model probability − fair probability at the best price; the publish bars are set on it. Real edge = the same bet after a calibration model, fit on every graded bet (≈16k from the closing-line backtests plus every live result as it is graded), shrinks the raw edge by situation — on average only about a third of a raw edge survives the market. Confidence = the rule-based trust score (sample size, role stability, injury/weather data, line movement, sharp-book agreement).
-        Stake = min(full Kelly × fraction, cap) × bankroll, rounded to 0.05u (under 0.1u shows as –). The paper-bet record and the Google Sheet always use the defaults (market bars, confidence 55, ¼-Kelly, 100u, 3% cap) so the track record stays reproducible; the settings above only change what you see here. Click a row for the reasons.
+        Stake = min(full Kelly × fraction, cap) × bankroll, then every bet is scaled by the same factor so the week&apos;s total stays within the exposure budget; rounded to 0.05u (under 0.1u shows as –). The paper-bet record and the Google Sheet always use the defaults (market bars, confidence 55, ¼-Kelly, 100u, 3% cap) so the track record stays reproducible; the settings above only change what you see here. Click a row for the reasons.
       </p>
     </div>
   );

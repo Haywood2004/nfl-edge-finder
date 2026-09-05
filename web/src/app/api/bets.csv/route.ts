@@ -1,5 +1,5 @@
 import { sql } from "@/lib/db";
-import { kellyFull, kellyStake, DEFAULT_BANKROLL, DEFAULT_FRACTION } from "@/lib/kelly";
+import { kellyFull, kellyStake, DEFAULT_BANKROLL, DEFAULT_FRACTION, exposureScale } from "@/lib/kelly";
 import { barFor } from "@/lib/thresholds";
 
 export const dynamic = "force-dynamic";
@@ -26,14 +26,22 @@ export async function GET() {
     "kelly_full_pct", "kelly_fraction", "bankroll_units", "edge_calibrated", "prob_calibrated"];
   const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const mk: Record<string, string> = { player_pass_yds: "Pass Yds", player_reception_yds: "Rec Yds", player_rush_yds: "Rush Yds", player_receptions: "Receptions", h2h: "Moneyline" };
+  // week-level exposure scaling: same rule as the screener, applied to the flagged (tier) bets of each week
+  const stakeRaw = (r: (typeof rows)[number]) => kellyStake(r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob), Number(r.price_decimal));
+  const weekScale: Record<string, number> = {};
+  for (const wk of new Set(rows.map((r) => `${r.season}-${r.week}`))) {
+    const inWeek = rows.filter((r) => `${r.season}-${r.week}` === wk);
+    weekScale[wk] = exposureScale(inWeek.map(stakeRaw));
+  }
   const lines = rows.map((r) => {
     const dec = Number(r.price_decimal), p = r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob);
+    const scaled = Math.max(Math.round(stakeRaw(r) * weekScale[`${r.season}-${r.week}`] * 20) / 20, 0.1);
     const bet = r.market === "h2h" ? `${r.player_name} ML` : `${r.player_name} ${r.side} ${r.line}`;
     const kick = new Date(r.kickoff_utc);
     return [
       kick.toLocaleDateString("en-CA", { timeZone: "America/New_York" }), r.week, mk[r.market] ?? r.market, bet, r.team, r.opponent,
       r.side, r.line ?? "", dec.toFixed(3), r.price_american, r.book, p.toFixed(4), Number(r.market_prob).toFixed(4),
-      Number(r.edge).toFixed(4), r.confidence, Number(r.edge) >= barFor(r.market) ? "flagged" : "paper", Math.max(kellyStake(p, dec), 0.1).toFixed(2),
+      Number(r.edge).toFixed(4), r.confidence, Number(r.edge) >= barFor(r.market) ? "flagged" : "paper", scaled.toFixed(2),
       r.result ?? "", r.actual ?? "", r.clv_prob == null ? "" : Number(r.clv_prob).toFixed(4),
       kick.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
       r.id, new Date(r.created_at).toISOString(),

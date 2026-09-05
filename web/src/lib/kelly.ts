@@ -5,6 +5,16 @@ export const DEFAULT_BANKROLL = 100;   // units
 export const DEFAULT_FRACTION = 0.25;
 export const MIN_STAKE = 0.1;          // units — below this a bet isn't worth logging
 export const MAX_STAKE_PCT = 0.03;     // never more than 3% of bankroll on one leg
+export const WEEKLY_EXPOSURE_PCT = 0.40; // Kelly sizes each bet against the whole bankroll; with 100+ simultaneous
+                                        // bets that sums to several bankrolls, so the week's stakes are scaled down
+                                        // proportionally to this budget (2025 backtest: ~180 bets/week unscaled)
+
+/** Scale a week's stakes so their sum does not exceed the exposure budget. Returns the multiplier (≤ 1). */
+export function exposureScale(stakes: number[], bankroll = DEFAULT_BANKROLL, exposurePct = WEEKLY_EXPOSURE_PCT): number {
+  const total = stakes.reduce((s, x) => s + x, 0);
+  const budget = bankroll * exposurePct;
+  return total > budget && total > 0 ? budget / total : 1;
+}
 
 export function kellyFull(p: number, dec: number): number {
   const b = dec - 1;
