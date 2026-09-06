@@ -51,7 +51,8 @@ export function BacktestLab() {
     // week-level exposure scaling, exactly as the screener does it
     const byWeek = new Map<string, Bet[]>();
     for (const b of picked) { const k = `${b.season}-${b.week}`; (byWeek.get(k) ?? byWeek.set(k, []).get(k)!).push(b); }
-    const weeks = [...byWeek.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, bets]) => {
+    const wkNum = (k: string) => { const [s, w] = k.split("-").map(Number); return s * 100 + w; };
+    const weeks = [...byWeek.entries()].sort(([a], [b]) => wkNum(a) - wkNum(b)).map(([key, bets]) => {
       const raw = bets.map(stakeRaw);
       const scale = exposureScale(raw, bankroll, exposure / 100);
       let staked = 0, pnl = 0, exp = 0, flat = 0, w = 0, l = 0, p = 0;
@@ -236,7 +237,7 @@ function Breakdown({ title, rows }: { title: string; rows: [string, { n: number;
 
 function Curve({ pts }: { pts: { key: string; eq: number }[] }) {
   if (!pts.length) return <p className="text-sm text-muted">No bets under these settings.</p>;
-  const W = 720, H = 200, padL = 40, padR = 8, padT = 10, padB = 24;
+  const W = 720, H = 210, padL = 40, padR = 8, padT = 22, padB = 24;
   const ys = pts.map((p) => p.eq);
   const lo = Math.min(0, ...ys), hi = Math.max(0, ...ys);
   const span = hi - lo || 1;
@@ -254,7 +255,7 @@ function Curve({ pts }: { pts: { key: string; eq: number }[] }) {
       {[lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i).map((v) => (
         <text key={v} x={padL - 6} y={y(v) + 4} fill="var(--muted)" fontSize="10" textAnchor="end">{v.toFixed(0)}u</text>
       ))}
-      {pts.map((p, i) => (i % step === 0 || i === pts.length - 1) && (
+      {pts.map((p, i) => ((i % step === 0 && pts.length - 1 - i >= step / 2) || i === pts.length - 1) && (
         <text key={p.key} x={x(i)} y={H - 6} fill="var(--muted)" fontSize="10" textAnchor={i === pts.length - 1 ? "end" : "middle"}>{p.key}</text>
       ))}
       <circle cx={x(pts.length - 1)} cy={y(last.eq)} r="3" fill={last.eq >= 0 ? "var(--up)" : "var(--down)"} />
