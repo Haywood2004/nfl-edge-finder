@@ -151,6 +151,7 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
             q50_used = (1 - MARKET_ANCHOR_W) * q50_lvl + MARKET_ANCHOR_W * consensus_line
             raw_mean = float(f["mean"]) + level_shift
             used_mean = float(f["mean"]) + (q50_used - float(f["q50"]))
+            q_shift = q50_used - float(f["q50"])
             open_line = None
             if len(open_lines):
                 ol = open_lines[open_lines.player.map(_norm_name) == f.nname]
@@ -177,8 +178,9 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
             proj_rows.append({
                 "model_run_id": run_id, "season": season, "week": wk, "game_id": f.game_id, "player_id": f.player_id,
                 "player_name": f.player_name, "team": f.team, "opponent": f.opponent, "market": MARKET,
-                "mean": float(f["mean"]), "sd": float(f["sd"]), "q10": float(f.q10), "q25": float(f.q25),
-                "q50": float(f.q50), "q75": float(f.q75), "q90": float(f.q90),
+                # quantiles are stored AFTER the level/market anchoring so the card's chart matches the probability used
+                "mean": float(f["mean"]), "sd": float(f["sd"]), "q10": float(f.q10) + q_shift, "q25": float(f.q25) + q_shift,
+                "q50": float(f.q50) + q_shift, "q75": float(f.q75) + q_shift, "q90": float(f.q90) + q_shift,
                 "factors": [x for x in base_factors if x["impact_over"] != 0 or x["factor"] in ("projection",)],
             })
             best = {}
@@ -198,6 +200,17 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                                            else "−" if x["impact_over"] * (1 if side == "Over" else -1) < 0 else "▬"))
                            for x in base_factors]
                 factors.sort(key=lambda x: -abs(x.get("magnitude", 0)))
+                # the bottom line first: the matchup/context factors are what the book already priced into the line;
+                # the pick is the gap between our (anchored) median and that line
+                gap = q50_used - float(c["line"])
+                unit_txt = "" if market == "player_receptions" else " yds"
+                factors.insert(0, {"factor": "bottom_line", "value": round(gap, 1), "impact_over": 1 if gap > 0 else -1,
+                                   "magnitude": min(abs(gap) / max(float(f["sd"]), 1e-6) * 2, 1.0),
+                                   "impact": "+" if (gap > 0) == (side == "Over") else "−",
+                                   "text": f"Bottom line: our median {q50_used:.0f} vs line {c['line']:g} ({gap:+.1f}{unit_txt}, {abs(gap) / max(float(f['sd']), 1e-6):.2f} sd). "
+                                           f"The opponent and game factors below are already priced into the line — the pick is that the book "
+                                           f"{'under' if gap > 0 else 'over'}shoots the player's usage-based projection.",
+                                   "source": {"table": "projections", "key": "q50"}})
                 conf = (confidence_score(X_row, c, open_line, wx, inj, injury_data_available, len(books), side) if is_qb
                         else skill_confidence(X_row, c, open_line, wx, inj, injury_data_available, len(books), side, market))
                 sf = 0

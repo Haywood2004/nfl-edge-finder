@@ -15,7 +15,12 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
     projection(c.projection_id), lineHistory(c.event_id ?? "", c.market, c.player_name),
     playerGameLog(c.player_id, c.market), opponentLastGames(c.opponent, c.market, c.position), teamInjuries(c.season, c.week, [c.team, c.opponent]),
   ]);
-  const usedMean = Number(c.factors.find((f) => f.factor === "projection")?.value ?? proj?.mean ?? 0);
+  const projFactor = c.factors.find((f) => f.factor === "projection") as (typeof c.factors)[number] & { q_anchored?: boolean } | undefined;
+  const usedMean = Number(projFactor?.value ?? proj?.mean ?? 0);
+  // projections scored before the quantiles were stored post-anchoring get the same shift the mean got
+  const qShift = proj && !projFactor?.q_anchored ? usedMean - Number(proj.mean) : 0;
+  const q = proj ? { q10: Number(proj.q10) + qShift, q25: Number(proj.q25) + qShift, q50: Number(proj.q50) + qShift, q75: Number(proj.q75) + qShift, q90: Number(proj.q90) + qShift } : undefined;
+  const countMarket = c.market === "player_receptions";
   const sideCls = c.side === "Over" ? "text-up" : "text-down";
   const matchup = c.team === c.home_team ? `${c.opponent} @ ${c.team}` : `${c.team} @ ${c.opponent}`;
   const line = Number(c.line);
@@ -52,16 +57,24 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
 
       <section className="card p-4 sm:p-5">
         <h2 className="eyebrow mb-2">Projection</h2>
-        {proj && <DistChart mean={usedMean} sd={Number(proj.sd)} line={line} side={c.side} />}
-        {proj && (
+        {proj && <DistChart mean={usedMean} sd={Number(proj.sd)} line={line} side={c.side} q={q} floorZero={c.market !== "player_pass_yds"} />}
+        {proj && q && (
           <p className="mt-1 text-xs text-muted tnum">
-            Raw model {num(proj.mean)} · market-anchored {num(usedMean)} · sd {num(proj.sd)} · P10 {num(proj.q10, 0)} · P25 {num(proj.q25, 0)} · P50 {num(proj.q50, 0)} · P75 {num(proj.q75, 0)} · P90 {num(proj.q90, 0)}
+            Median {num(q.q50, 0)} · mean {num(usedMean)} (raw model {num(proj.mean)}) · sd {num(proj.sd)} · P10 {num(q.q10, 0)} · P25 {num(q.q25, 0)} · P75 {num(q.q75, 0)} · P90 {num(q.q90, 0)}
+            {!countMarket && q.q50 < usedMean - 2 && <> · right-skewed: a few big games pull the mean above the median, so the median is the number to compare with the line</>}
           </p>
         )}
+        <p className="mt-2 text-xs text-muted">
+          Shaded area = model probability of the <b className="text-fg">{c.side}</b> ({pct(Number(c.model_prob), 1)}) — the market&apos;s no-vig price is {pct(Number(c.market_prob), 1)}.
+        </p>
       </section>
 
       <section className="card p-4 sm:p-5">
         <h2 className="eyebrow mb-2">Why</h2>
+        <p className="mb-2 text-xs text-muted">
+          <span className="text-up">▲</span> helps this {c.side} &nbsp;·&nbsp; <span className="text-down">▼</span> works against it &nbsp;·&nbsp; <span className="text-flat">▬</span> neutral.
+          Arrows are relative to the bet, not to the stat: a bad run defense pushes yards <i>up</i>, which is a ▼ for an Under.
+        </p>
         <FactorList factors={c.factors} season={c.season} week={c.week} />
       </section>
 

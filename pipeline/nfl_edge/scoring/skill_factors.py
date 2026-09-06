@@ -172,8 +172,8 @@ def build_skill_factors(X: dict, mean: float, used_mean: float, sd: float, line:
         F.append({"factor": "line_move", "value": round(line - open_line, 1), "impact_over": (-1 if moved_up else +1), "magnitude": 0.35,
                   "text": f"Line moved {open_line:g} → {line:g} since open ({'toward the over' if moved_up else 'toward the under'})",
                   "source": {"table": "odds_lines", "key": "line"}})
-    F.append({"factor": "projection", "value": round(used_mean, 1), "impact_over": 0, "magnitude": 0.0,
-              "text": f"Model {mean:.1f} → market-anchored {used_mean:.1f} (sd {sd:.1f}) vs consensus line {line:g}",
+    F.append({"factor": "projection", "value": round(used_mean, 1), "impact_over": 0, "magnitude": 0.0, "q_anchored": True,
+              "text": f"Model mean {mean:.1f} → market-anchored {used_mean:.1f} (sd {sd:.1f}) vs consensus line {line:g}",
               "source": {"table": "projections", "key": "mean"}})
     return [x for x in F if x is not None]
 

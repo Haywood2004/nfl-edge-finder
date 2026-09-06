@@ -74,3 +74,14 @@ units (+361u expected vs +308u realised at ¼-Kelly, unscaled).
 common factor so the week's total ≤ `WEEKLY_EXPOSURE_PCT` (default 40%) of bankroll, applied identically in the
 screener and in `bets.csv`. The ordering of stakes (Kelly proportions) is preserved; only the level changes.
 Season-level expectation on a 100u bankroll at 40% weekly exposure: ≈ +50u/season (2025 backtest), weekly sd ≈ 4u.
+
+## 32. Cards lead with the bottom line; charts draw the skewed distribution (2026-09-05)
+
+A card reads "Giants allow the 2nd-most rushing yards" with a ▼ and then takes the Under, which looks backwards.
+It isn't: the matchup factors describe what the book has already priced into the line; the pick is the gap between
+our anchored median and that line. Changes: (1) every prop card now opens with a `bottom_line` factor — "our median
+X vs line Y (gap, in sd) … the pick is that the book over/undershoots the player's usage-based projection";
+(2) an arrow legend on the card page (arrows are relative to the bet, not to the stat); (3) projection quantiles are
+stored after anchoring (they used to be raw while the mean was anchored, so the chart contradicted the probability);
+(4) the chart is drawn from the quantiles (monotone-cubic CDF → density), so for right-skewed yardage markets the
+shaded area equals the model probability and the marker is the median, not the mean.

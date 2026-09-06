@@ -189,7 +189,7 @@ def build_factors(X: dict, mean: float, used_mean: float, sd: float, line: float
                   "source": {"table": "odds_lines", "key": "line"}})
 
     # 9. projection summary (always present, neutral)
-    F.append({"factor": "projection", "value": round(used_mean, 1), "impact_over": 0, "magnitude": 0.0,
+    F.append({"factor": "projection", "value": round(used_mean, 1), "impact_over": 0, "magnitude": 0.0, "q_anchored": True,
               "text": f"Model {mean:.1f} → market-anchored {used_mean:.1f} (P25 {used_mean - 0.674 * sd:.0f} · P75 {used_mean + 0.674 * sd:.0f}) vs consensus line {line:g}",
               "source": {"table": "projections", "key": "mean"}})
     return F
