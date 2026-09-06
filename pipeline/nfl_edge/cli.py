@@ -31,8 +31,12 @@ def main(argv=None):
         for m in (a.markets or ["player_pass_yds"]):
             run(a.seasons or None, market=m)
     elif a.job == "train_cal":        # learned edge calibration from backtests + graded live cards
-        from .models.calibration import train as train_cal
+        from .models.calibration import train as train_cal, export_backtest_bets
         train_cal()
+        export_backtest_bets()
+    elif a.job == "export_backtest":  # backtest bets + calibrated probs → backtest_bets (web Backtest lab)
+        from .models.calibration import export_backtest_bets
+        export_backtest_bets()
     elif a.job == "train_props":      # receiving yards, receptions, rushing yards
         from .models.player_props import train as train_prop, SPECS
         for m in [x for x in a.markets if x in SPECS]:

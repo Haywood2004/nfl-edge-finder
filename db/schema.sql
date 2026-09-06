@@ -494,3 +494,12 @@ CREATE TABLE IF NOT EXISTS game_projections (
   factors            jsonb NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS game_projections_sw ON game_projections(season, week);
+
+-- Closing-line backtest bets (derived; rebuilt whole by `export_backtest`). Feeds the web Backtest lab.
+CREATE TABLE IF NOT EXISTS backtest_bets (
+  id BIGSERIAL PRIMARY KEY,
+  season INT NOT NULL, week INT NOT NULL, market TEXT NOT NULL, game_id TEXT, player_name TEXT, team TEXT, opponent TEXT,
+  book TEXT, line NUMERIC, side TEXT, price_decimal NUMERIC, market_prob NUMERIC, model_prob NUMERIC, prob_calibrated NUMERIC,
+  edge NUMERIC, actual NUMERIC, result TEXT
+);
+CREATE INDEX IF NOT EXISTS backtest_bets_season_idx ON backtest_bets (season, week);

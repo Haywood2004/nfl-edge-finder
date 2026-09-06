@@ -178,3 +178,50 @@ def load_latest() -> Calibrator | None:
         with open(path, "rb") as fh:
             return pickle.load(fh)
     return pickle.loads(bytes(r.artifact.iloc[0])) if r.artifact.iloc[0] is not None else None
+
+
+def export_backtest_bets(cal: "Calibrator | None" = None) -> int:
+    """Write the closing-line backtest bets, with calibrated win probabilities, to `backtest_bets` so the web
+    app's Backtest lab can re-run any edge / Kelly / exposure setting client-side. Derived table: rebuilt whole."""
+    from sqlalchemy import text
+    from .passing_yards import load_training as load_py
+    from .player_props import load_training as load_pp, SPECS
+    cal = cal or load_latest()
+    frames = []
+    for m in MARKETS:
+        p = ARTIFACT_DIR / f"backtest_{m}.parquet"
+        if not p.exists():
+            try:
+                from .backtest_lines import run as backtest_run
+                backtest_run(grid=False, market=m)
+            except Exception as e:
+                print(f"[backtest_export] no rows for {m}: {e}"); continue
+        if not p.exists():
+            continue
+        b = pd.read_parquet(p)
+        df, _ = load_py() if m == "player_pass_yds" else load_pp(SPECS[m])
+        df = df.copy(); df["nname"] = df.player_name.map(_norm)
+        need = ["game_id", "nname", "games_career", "new_team", "opp_games", "new_hc", "injury_report_seen", "week_num", USAGE_COL[m], "team", "opponent"]
+        j = b.merge(df[need].drop_duplicates(["game_id", "nname"]), on=["game_id", "nname"], how="left")
+        rows = []
+        for _, r in j.iterrows():
+            X = {k: r[k] for k in need[2:-2]}
+            f = featurize(m, float(r.edge), float(r.mean_used), 1.0, float(r.line), r.side, X, 0, float(r.fair))
+            f["abs_z"] = abs(float(r.p) - 0.5) * 4
+            rows.append(f)
+        j["p_cal"] = cal.p_win(rows) if cal is not None and rows else np.nan
+        j["market"] = m
+        frames.append(j[["season", "week", "market", "game_id", "player_name", "team", "opponent", "bookmaker", "line", "side",
+                         "dec", "fair", "p", "p_cal", "edge", "y", "win", "push"]])
+    if not frames:
+        return 0
+    out = pd.concat(frames, ignore_index=True)
+    out = out.rename(columns={"p": "model_prob", "fair": "market_prob", "dec": "price_decimal", "y": "actual", "bookmaker": "book"})
+    out["prob_calibrated"] = out.pop("p_cal")
+    out["result"] = np.where(out.push, "push", np.where(out.win, "win", "loss"))
+    out = out.drop(columns=["win", "push"])
+    with db.conn() as c:
+        c.execute(text("TRUNCATE backtest_bets"))
+    n = db.append(out, "backtest_bets")
+    print(f"[backtest_export] wrote {n} backtest bets")
+    return n

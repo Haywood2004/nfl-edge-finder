@@ -85,3 +85,12 @@ X vs line Y (gap, in sd) … the pick is that the book over/undershoots the play
 stored after anchoring (they used to be raw while the mean was anchored, so the chart contradicted the probability);
 (4) the chart is drawn from the quantiles (monotone-cubic CDF → density), so for right-skewed yardage markets the
 shaded area equals the model probability and the marker is the median, not the mean.
+
+## 33. Backtest lab: the screener's rules replayed on history, in the browser (2026-09-06)
+
+`backtest_bets` (derived, rebuilt whole by `export_backtest`, also after every `train_cal`) holds every closing-line
+backtest bet with its calibrated probability. `/api/backtest.json` serves it as column arrays (~16k rows) and the
+`/backtest` page re-runs the screener's exact rules client-side: per-market bars or a flat edge requirement, Kelly
+fraction, per-bet cap, weekly exposure scaling, sized off the calibrated or raw probability. Bankroll is held fixed
+(no compounding). Confidence is not applied historically (not stored for past weeks). At the defaults on a 100u
+bankroll: 2023 −0.3u, 2024 +21.2u, 2025 +44.3u; ~3,300 bets, +65u on 984u staked (+6.6%), max weekly sd ≈ 3.6u.
