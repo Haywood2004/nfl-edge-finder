@@ -8,6 +8,7 @@ COPY pipeline/nfl_edge pipeline/nfl_edge
 COPY live/pyproject.toml live/pyproject.toml
 COPY live/live live/live
 COPY docs docs
+COPY db db
 RUN pip install -e pipeline -e live
 # secrets come from the host's environment: DATABASE_URL, ODDS_API_KEY, DISCORD_WEBHOOK_URL (+ LIVE_* overrides)
 CMD ["python", "-m", "live", "worker"]
