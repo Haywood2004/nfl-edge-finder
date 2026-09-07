@@ -7,6 +7,7 @@
   clv         close out pre-game alerts whose games kicked off (closing line → live_clv)
   report      the weekly numbers for docs/TODO.md (alerts, hit rate, CLV, credits)
   status      budget + context sanity check (no credits spent)
+  migrate     apply the live_* tables / cards.source (idempotent; the worker runs this on start)
 """
 from __future__ import annotations
 import argparse
@@ -37,7 +38,15 @@ def main(argv=None):
     elif a.job == "ingame":
         from .tracker import Tracker
         Tracker().run(once=a.once)
+    elif a.job == "migrate":
+        from .migrate import apply
+        apply()
     elif a.job == "worker":
+        from .migrate import apply
+        try:
+            apply()
+        except Exception as e:      # a DB that is read-only (storage limit) must not stop the paper projections
+            print(f"[migrate] failed: {e!r}")
         from .pregame import Watcher
         from .tracker import Tracker
         from .pricing import WeekContext
