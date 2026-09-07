@@ -27,6 +27,7 @@ DRY_RUN = _b("LIVE_DRY_RUN", False)                          # price + log, send
 LIVE_CREDIT_BUDGET = _i("LIVE_CREDIT_BUDGET", 5000)          # live bot's own monthly allowance (raise on the 100k plan)
 STOP_AT_FRACTION = _f("LIVE_STOP_AT_FRACTION", 0.85)         # stop polling when the WHOLE key has used this share of the plan
 PACING_BURST = _f("LIVE_PACING_BURST", 2.0)                   # may spend up to this × the even-pace allowance in an hour
+PACING_HORIZON_HOURS = _f("LIVE_PACING_HORIZON_HOURS", 0)     # spread the remaining budget over this many hours (0 = rest of month)
 
 # --- pre-game polling cadence (minutes) ---------------------------------------------------------------------
 SWEEP_MIN = _i("LIVE_SWEEP_MIN", 360)          # every event-market at least this often (discovers new candidates)

@@ -53,6 +53,8 @@ class Budget:
         self.key_remaining = int(k.credits_remaining.iloc[0]) if len(k) else None
         nxt = (month_start + dt.timedelta(days=32)).replace(day=1)
         self.hours_left = max((nxt - now).total_seconds() / 3600, 1.0)
+        if C.PACING_HORIZON_HOURS > 0:      # a short trial spends its allowance over days, not the whole month
+            self.hours_left = min(self.hours_left, C.PACING_HORIZON_HOURS)
         self.live_remaining = max(C.LIVE_CREDIT_BUDGET - self.live_spent, 0)
         self.hourly_allowance = self.live_remaining / self.hours_left
 
