@@ -1,0 +1,14 @@
+# fly launch --no-deploy --copy-config ; fly secrets set DATABASE_URL=... ODDS_API_KEY=... DISCORD_WEBHOOK_URL=... ; fly deploy
+app = "nfl-edge-live"
+primary_region = "iad"
+[build]
+  dockerfile = "Dockerfile"
+[env]
+  LIVE_PAPER_ONLY = "true"
+  LIVE_CREDIT_BUDGET = "5000"
+  LIVE_INGAME_ENABLED = "false"
+[processes]
+  worker = "python -m live worker"
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
