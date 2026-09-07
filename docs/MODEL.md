@@ -77,3 +77,30 @@ MAE 59.38 · coverage q25 0.245 / q75 0.715
 | att_ewm | 0.010 |
 
 All 74 features: dome, temp, wind, py_l3, py_l5, att_l3, att_l5, new_hc, ol_out, py_ewm, py_l10, att_ewm, is_home, wr1_out, ypa_ewm, ypa_l10, cpoe_ewm, div_game, new_team, week_num, games_std, opp_games, primetime, py_sd_l10, rest_days, skill_out, team_proe, opp_db_out, py_std_avg, team_games, total_line, air_yds_ewm, epa_att_ewm, spread_team, usage_trend, coach_tenure, games_career, league_py_l8, rush_yds_ewm, implied_total, league_att_l8, opp_front_out, opp_sack_rate, sack_rate_ewm, team_plays_pg, py_prev_season, team_pass_rate, days_since_last, target_share_out, team_pass_yds_pg, games_prev_season, team_epa_per_play, team_shotgun_rate, injury_report_seen, team_no_huddle_rate, opp_pass_epa_allowed, opp_rush_epa_allowed, team_pass_epa_per_db, league_py_prev_season, opp_sos_adj_pass_rank, opp_te_yds_allowed_pg, opp_wr_yds_allowed_pg, team_neutral_plays_pg, opp_dropbacks_faced_pg, team_neutral_pass_rate, opp_pass_yds_allowed_pg, opp_rush_yds_allowed_pg, opp_yac_per_comp_allowed, opp_pass_epa_allowed_rank, opp_pass_yds_allowed_rank, opp_yds_per_dropback_rank, opp_sos_adj_pass_yds_allowed, opp_yds_per_dropback_allowed, opp_explosive_pass_rate_allowed
+
+# MODEL.md — live (in-game)
+
+_Replay of 2025 play-by-play, 272 games, 2026-09-07 00:07 UTC. `python -m live replay`. Pre-game priors = the pipeline models on 2025 feature rows (held-out season)._
+
+MAE of the projected FINAL stat at each checkpoint. `live` = the in-game model (live/ingame.py); `pregame` = the pre-game mean; `naive_pace` = y_t / f; `no_adj` = y_t + (1−f)·mean (no usage / game-script adjustment). `cover_1sd` = share of finals within ±1 sd_live (0.68 if calibrated); `z_sd` = sd of the standardised error (1.0 if calibrated).
+
+| market | checkpoint | n | live | pregame | naive_pace | no_adj | cover_1sd | z_sd |
+|---|---|---|---|---|---|---|---|---|
+| player_pass_yds | end Q1 | 561 | **48.3** | 51.0 | 92.8 | 47.7 | 0.72 | 0.96 |
+| player_pass_yds | end Q2 | 548 | **39.8** | 50.2 | 55.6 | 42.2 | 0.70 | 0.95 |
+| player_pass_yds | end Q3 | 557 | **30.0** | 50.6 | 38.0 | 34.1 | 0.73 | 0.97 |
+| player_pass_yds | Q4 5:00 | 561 | **19.2** | 51.0 | 22.3 | 21.9 | 0.78 | 1.00 |
+| player_reception_yds | end Q1 | 3320 | **17.1** | 19.5 | 29.2 | 17.2 | 0.78 | 0.96 |
+| player_reception_yds | end Q2 | 2703 | **14.1** | 20.4 | 19.6 | 14.5 | 0.82 | 0.98 |
+| player_reception_yds | end Q3 | 3016 | **9.2** | 19.9 | 10.9 | 9.9 | 0.85 | 1.00 |
+| player_reception_yds | Q4 5:00 | 3163 | **4.6** | 19.7 | 5.1 | 5.1 | 0.88 | 1.06 |
+| player_receptions | end Q1 | 3320 | **1.3** | 1.4 | 2.3 | 1.3 | 0.71 | 1.02 |
+| player_receptions | end Q2 | 2703 | **1.0** | 1.4 | 1.4 | 1.1 | 0.73 | 0.99 |
+| player_receptions | end Q3 | 3016 | **0.7** | 1.4 | 0.8 | 0.8 | 0.81 | 0.99 |
+| player_receptions | Q4 5:00 | 3163 | **0.4** | 1.4 | 0.4 | 0.4 | 0.84 | 1.03 |
+| player_rush_yds | end Q1 | 1020 | **20.3** | 23.4 | 32.1 | 20.6 | 0.74 | 1.00 |
+| player_rush_yds | end Q2 | 944 | **16.5** | 23.7 | 18.9 | 16.7 | 0.74 | 1.04 |
+| player_rush_yds | end Q3 | 979 | **11.1** | 23.6 | 11.0 | 11.1 | 0.75 | 1.13 |
+| player_rush_yds | Q4 5:00 | 997 | **5.0** | 23.5 | 4.9 | 5.1 | 0.89 | 0.94 |
+
+Reading: the live model should beat both baselines at every checkpoint and by a widening margin as the game goes on; `no_adj` vs `live` isolates what the usage and game-script terms add. If `z_sd` > 1 the live sd is too tight (raise LIVE_INGAME_SD_FLOOR); if < 1 it is too wide.
