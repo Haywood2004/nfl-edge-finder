@@ -9,3 +9,5 @@ pipeline/artifacts/*.pkl
 pipeline/artifacts/*.txt
 
 pipeline/.cache/
+live/nfl_edge_live.egg-info/
+pipeline/artifacts/live_replay_*.parquet
