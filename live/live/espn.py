@@ -14,10 +14,29 @@ import time
 import requests
 from nfl_edge.sources.espn import ESPN_ABBR
 
-BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
+# ESPN serves the same site API from several hosts; datacenter IP ranges get 403 from some of them, so each call
+# tries the hosts in order and remembers the first one that answers (docs/LIVE.md).
+HOSTS = [
+    "https://site.api.espn.com/apis/site/v2/sports/football/nfl",
+    "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl",
+    "https://cdn.espn.com/core/nfl",          # ?xhr=1 form; scoreboard/summary payloads are wrapped (see _unwrap)
+]
+BASE = HOSTS[0]
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
-           "Accept": "application/json"}
+           "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.9", "Referer": "https://www.espn.com/",
+           "Origin": "https://www.espn.com"}
 CACHE_SEC = 15
+
+
+def _unwrap(j: dict, kind: str) -> dict:
+    """cdn.espn.com wraps the same objects: scoreboard → content.sbData, summary → content.gamepackageJSON."""
+    if isinstance(j, dict) and "content" in j and isinstance(j["content"], dict):
+        c = j["content"]
+        if kind == "scoreboard" and "sbData" in c:
+            return c["sbData"]
+        if kind == "summary" and "gamepackageJSON" in c:
+            return c["gamepackageJSON"]
+    return j
 
 
 def abbr(a: str | None) -> str | None:
@@ -28,28 +47,45 @@ class ESPN:
     def __init__(self, session: requests.Session | None = None):
         self.s = session or requests.Session()
         self.cache: dict[str, tuple[float, dict]] = {}
+        self.host_idx = 0
+        self.fail_streak = 0
 
-    def _get(self, path: str, params: dict | None = None) -> dict | None:
+    def _get(self, path: str, params: dict | None = None, kind: str = "scoreboard") -> dict | None:
         key = path + str(sorted((params or {}).items()))
         hit = self.cache.get(key)
         if hit and time.time() - hit[0] < CACHE_SEC:
             return hit[1]
-        try:
-            r = self.s.get(f"{BASE}{path}", params=params or {}, headers=HEADERS, timeout=20)
-            r.raise_for_status()
-            j = r.json()
-        except Exception as e:
-            print(f"[espn] {path} failed: {e}")
-            return hit[1] if hit else None      # stale beats nothing
-        self.cache[key] = (time.time(), j)
-        return j
+        errors = []
+        for i in range(len(HOSTS)):
+            idx = (self.host_idx + i) % len(HOSTS)
+            base = HOSTS[idx]
+            p = dict(params or {})
+            if "cdn.espn.com" in base:
+                p["xhr"] = 1
+            try:
+                r = self.s.get(f"{base}{path}", params=p, headers=HEADERS, timeout=20)
+                r.raise_for_status()
+                j = _unwrap(r.json(), kind)
+            except Exception as e:
+                errors.append(f"{base.split('/')[2]}: {e}")
+                continue
+            if idx != self.host_idx:
+                print(f"[espn] switched to {base.split('/')[2]}")
+                self.host_idx = idx
+            self.fail_streak = 0
+            self.cache[key] = (time.time(), j)
+            return j
+        self.fail_streak += 1
+        if self.fail_streak <= 3 or self.fail_streak % 30 == 0:     # do not spam the log every 20 s
+            print(f"[espn] {path} failed on every host ({self.fail_streak}x): " + " | ".join(errors))
+        return hit[1] if hit else None      # stale beats nothing
 
     def scoreboard(self, date: str | None = None) -> list[dict]:
-        j = self._get("/scoreboard", {"dates": date} if date else None)
+        j = self._get("/scoreboard", {"dates": date} if date else None, kind="scoreboard")
         return parse_scoreboard(j) if j else []
 
     def summary(self, espn_id: str) -> dict | None:
-        j = self._get("/summary", {"event": espn_id})
+        j = self._get("/summary", {"event": espn_id}, kind="summary")
         return parse_summary(j) if j else None
 
 

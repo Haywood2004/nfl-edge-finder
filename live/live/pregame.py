@@ -46,6 +46,7 @@ class Watcher:
         try:
             ev = refresh_events(self.api)
         except Exception as e:
+            self.events_at = time.time() - 1800 + 300     # retry in 5 min, not every tick
             print(f"[pregame] events refresh failed: {e}")
             return
         wk = self.ctx.games.game_id.tolist()
