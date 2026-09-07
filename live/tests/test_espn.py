@@ -28,3 +28,31 @@ def test_garbage_in_no_exception():
     assert parse_scoreboard({}) == []
     assert parse_summary({}) == {"teams": {}, "players": {}}
     assert parse_scoreboard({"events": [{"id": 1}]})[0]["state"] == "pre"
+
+
+def test_cdn_unwrap_and_host_fallback(monkeypatch):
+    from live import espn as E
+    calls = []
+
+    class R:
+        def __init__(self, status, body): self.status_code, self._b = status, body
+        def raise_for_status(self):
+            if self.status_code >= 400: raise RuntimeError(f"{self.status_code}")
+        def json(self): return self._b
+
+    class S:
+        def get(self, url, params=None, headers=None, timeout=None):
+            calls.append(url)
+            if "site.api" in url or "site.web" in url:
+                return R(403, {})
+            assert params.get("xhr") == 1
+            return R(200, {"content": {"sbData": {"events": [{"id": "1", "competitions": [{"status": {"type": {"state": "in"}}}]}]}}})
+
+    c = E.ESPN(session=S())
+    g = c.scoreboard()
+    assert len(g) == 1 and g[0]["state"] == "in"
+    assert c.host_idx == 2 and len(calls) == 3
+    c.scoreboard()                       # cached → no new call
+    assert len(calls) == 3
+    c.cache.clear(); c.scoreboard()      # sticks with the working host
+    assert calls[-1].startswith("https://cdn.espn.com")
