@@ -372,8 +372,6 @@ ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_rushing_yards numer
 ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_targets numeric;
 ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_carries numeric;
 CREATE INDEX IF NOT EXISTS feat_player_game_pos ON feat_player_game(position, season, week);
-ALTER TABLE cards ADD COLUMN IF NOT EXISTS prob_calibrated numeric;   -- learned shrinkage of model_prob (models/calibration.py)
-ALTER TABLE cards ADD COLUMN IF NOT EXISTS edge_calibrated numeric;
 CREATE INDEX IF NOT EXISTS feat_player_game_sw ON feat_player_game(season, week);
 
 -- ---------------------------------------------------------------------------
@@ -503,3 +501,130 @@ CREATE TABLE IF NOT EXISTS backtest_bets (
   edge NUMERIC, actual NUMERIC, result TEXT
 );
 CREATE INDEX IF NOT EXISTS backtest_bets_season_idx ON backtest_bets (season, week);
+
+-- ---------------------------------------------------------------------------
+-- (moved) cards columns added after the table exists — a fresh DB failed on the first apply when these ran first
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS prob_calibrated numeric;   -- learned shrinkage of model_prob (models/calibration.py)
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS edge_calibrated numeric;
+
+-- ---------------------------------------------------------------------------
+-- LIVE EDGE BOT (/live) — append-only. Owner: the live-bot agent (docs/AGENT_LIVE_BOT.md, docs/LIVE.md).
+-- The bot writes ONLY tables prefixed live_ and rows in cards with source='live'.
+-- ---------------------------------------------------------------------------
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'model';   -- model (pipeline) | live (live bot paper alerts)
+CREATE INDEX IF NOT EXISTS cards_source ON cards(source, created_at);
+
+-- one row per odds poll (pre-game or in-game). Referenced by cards.snapshot_id? No: cards.snapshot_id references
+-- odds_snapshots, so every live poll ALSO inserts an odds_snapshots row (label 'live_pregame' | 'live_ingame')
+-- and live_snapshots carries the live-specific detail keyed by that id.
+CREATE TABLE IF NOT EXISTS live_snapshots (
+  id             bigserial PRIMARY KEY,
+  snapshot_id    bigint NOT NULL REFERENCES odds_snapshots(id),   -- the paired odds_snapshots row
+  taken_at       timestamptz NOT NULL DEFAULT now(),
+  kind           text NOT NULL,           -- pregame | ingame
+  event_id       text,                    -- The Odds API event id polled (NULL for a multi-event game-lines call)
+  game_id        text,
+  markets        text[] NOT NULL,
+  credits_used   int NOT NULL DEFAULT 0,
+  n_lines        int NOT NULL DEFAULT 0,  -- lines seen in the payload
+  n_new          int NOT NULL DEFAULT 0,  -- lines stored (changed vs the previous poll)
+  game_state_id  bigint,                  -- live_game_state.id at poll time (in-game)
+  detail         jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS live_snapshots_event ON live_snapshots(event_id, taken_at);
+
+-- every polled line that differs from the last stored line for the same (event, market, book, player, side).
+-- Unchanged lines are NOT re-stored (they would be millions of rows a week at 5-minute polling); the
+-- live_snapshots row proves the poll happened and its n_lines says what was seen. Append-only.
+CREATE TABLE IF NOT EXISTS live_lines (
+  id               bigserial PRIMARY KEY,
+  live_snapshot_id bigint NOT NULL REFERENCES live_snapshots(id),
+  seen_at          timestamptz NOT NULL DEFAULT now(),
+  event_id         text NOT NULL,
+  market           text NOT NULL,
+  bookmaker        text NOT NULL,
+  player           text,
+  side             text NOT NULL,
+  line             numeric,
+  price_decimal    numeric NOT NULL,
+  price_american   int NOT NULL,
+  book_last_update timestamptz,
+  is_live          boolean NOT NULL DEFAULT false    -- polled while the game was in progress
+);
+CREATE INDEX IF NOT EXISTS live_lines_key ON live_lines(event_id, market, bookmaker, player, side, seen_at);
+
+-- every alert decision. A card row (source='live') is created for every alert that clears the bar,
+-- whether or not the message was delivered; status says what happened to the message.
+CREATE TABLE IF NOT EXISTS live_alerts (
+  id               bigserial PRIMARY KEY,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  card_id          bigint REFERENCES cards(id),
+  live_snapshot_id bigint REFERENCES live_snapshots(id),
+  kind             text NOT NULL,       -- pregame | ingame
+  channel          text NOT NULL,       -- discord | telegram | none
+  status           text NOT NULL,       -- sent | not_sent | suppressed
+  reason           text,                -- not_sent: rate_limit | outage | no_webhook | dry_run ; suppressed: duplicate | cooldown
+  dedupe_key       text NOT NULL,       -- player|market|side|book|line
+  minutes_to_kick  numeric,
+  game_state_id    bigint,
+  stake_units      numeric,
+  payload          jsonb NOT NULL DEFAULT '{}',
+  sent_at          timestamptz,
+  message_id       text
+);
+CREATE INDEX IF NOT EXISTS live_alerts_card ON live_alerts(card_id);
+CREATE INDEX IF NOT EXISTS live_alerts_dedupe ON live_alerts(dedupe_key, created_at);
+
+-- CLV measurements per alert at fixed horizons. Pre-game: 'close' (last line before kickoff).
+-- In-game: '30s' and 'dead_ball' (next stoppage). clv_prob = fair prob at horizon − fair prob at alert (same side);
+-- clv_line = line at horizon − line at alert, signed so positive = moved toward us.
+CREATE TABLE IF NOT EXISTS live_clv (
+  id              bigserial PRIMARY KEY,
+  alert_id        bigint NOT NULL REFERENCES live_alerts(id),
+  measured_at     timestamptz NOT NULL DEFAULT now(),
+  horizon         text NOT NULL,        -- close | 30s | dead_ball
+  bookmaker       text,
+  line            numeric,
+  price_decimal   numeric,
+  market_prob     numeric,
+  clv_prob        numeric,
+  clv_line        numeric,
+  source          text NOT NULL DEFAULT 'live_lines',   -- live_lines | odds_lines
+  UNIQUE (alert_id, horizon)
+);
+
+-- in-game state from ESPN, one row per fetch that changed anything (score, clock, plays)
+CREATE TABLE IF NOT EXISTS live_game_state (
+  id            bigserial PRIMARY KEY,
+  fetched_at    timestamptz NOT NULL DEFAULT now(),
+  espn_id       text NOT NULL,
+  game_id       text,
+  state         text NOT NULL,          -- pre | in | post
+  period        int,
+  clock_sec     int,                    -- seconds left in the period
+  home_team     text, away_team text,
+  home_score    int, away_score int,
+  home_plays    int, away_plays int,    -- offensive plays so far
+  possession    text,
+  payload       jsonb NOT NULL DEFAULT '{}'   -- parsed box score: per-player yards/targets/carries
+);
+CREATE INDEX IF NOT EXISTS live_game_state_game ON live_game_state(espn_id, fetched_at);
+
+-- in-game projections (paper), one per player-market per game-state row we priced
+CREATE TABLE IF NOT EXISTS live_projections (
+  id               bigserial PRIMARY KEY,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  game_state_id    bigint NOT NULL REFERENCES live_game_state(id),
+  game_id          text,
+  player_id        text NOT NULL,
+  player_name      text,
+  market           text NOT NULL,
+  projection_id    bigint REFERENCES projections(id),   -- the pre-game prior
+  y_t              numeric NOT NULL,   -- observed stat so far
+  f                numeric NOT NULL,   -- fraction of expected team plays elapsed
+  usage_adj        numeric NOT NULL,
+  script_adj       numeric NOT NULL,
+  mean_live        numeric NOT NULL,
+  sd_live          numeric NOT NULL
+);
+CREATE INDEX IF NOT EXISTS live_projections_game ON live_projections(game_id, player_id, market);
