@@ -94,3 +94,48 @@ backtest bet with its calibrated probability. `/api/backtest.json` serves it as 
 fraction, per-bet cap, weekly exposure scaling, sized off the calibrated or raw probability. Bankroll is held fixed
 (no compounding). Confidence is not applied historically (not stored for past weeks). At the defaults on a 100u
 bankroll: 2023 −0.3u, 2024 +21.2u, 2025 +44.3u; ~3,300 bets, +65u on 984u staked (+6.6%), max weekly sd ≈ 3.6u.
+
+## 34. Live edge bot — scope, storage and pricing parity (2026-09-06, live-bot agent)
+
+**Scope.** `/live` is a second, independent process (`docs/LIVE.md`) that watches lines at high frequency and alerts a
+human on Discord when a bet clears the pipeline's own bar. It never places bets, never touches sportsbook logins, and
+only writes `live_*` tables plus `cards(source='live')`; `live/tests/test_writes.py` scans the package for any other
+write target. The pre-game models, features, scoring and web app are used through imports only. Requests for changes
+on that side go to `docs/TODO.md` ("Requests from live bot").
+
+**Pricing parity, not a second scorer.** `live/pricing.py` imports the model pickles, confidence functions, sharp ±
+and calibrator, and `tests/test_pricing_parity.py` asserts that pricing the pipeline's own snapshot reproduces every
+card exactly (41/41 Week 1 cards: model_prob, confidence, best book, calibrated p all identical). The one live-specific
+step is re-anchoring the stored median to the current consensus with the scorer's `MARKET_ANCHOR_W`, so a line move
+between snapshots moves our median the way the next scoring run would.
+
+**Storage.** Every poll writes an `odds_snapshots` row (needed by `cards.snapshot_id`) whose `markets` are prefixed
+`live:` so the pipeline's latest-snapshot queries never pick a live poll, a `live_snapshots` row, and only the lines
+that changed since the last poll into `live_lines` (a diff-store: unchanged lines at 5-minute polling would be
+millions of rows a week; `n_lines` on the snapshot row records what was seen). Append-only; only `live_alerts.status`
+flips pending → sent/not_sent. `cards.source` column added (default `'model'`).
+
+**Credits on the 20k plan.** The plan was not yet upgraded, so the bot defaults to a 5,000-credit monthly allowance,
+a hard stop at 85% of the key's plan (`x-requests-remaining`), and hourly pacing with a 2× burst. Polling is
+adaptive: event-markets with a candidate within 3% of the bar are polled every 15 min (5 min in the last two hours),
+everything else every 6 h. In-game odds polling is off until the 100k plan (≈1.8k credits per Sunday slate); the
+ESPN tracker and paper in-game projections run regardless, for free.
+
+## 35. In-game model: (1 − f)·script, per-market sd exponent, validated on 2025 replay (2026-09-07, live-bot agent)
+
+`mean_live = y_t + mean_pre · usage_adj · (1 − f) · script_adj`. Two choices came out of the replay
+(`python -m live replay`, 272 games, `docs/MODEL.md` "live"): (a) using the pre-game `team_plays_pg` as the denominator
+for remaining opportunities biased Q1 projections low (its play-count unit does not match a live box score), so the
+remaining share is `(1 − f)` in live plays times the score-state script multiplier; with that, the live model beats
+the pre-game mean and naive pace at every checkpoint for every market (passing MAE 48/40/30/19 at end Q1/Q2/Q3/Q4-5:00
+vs 51 pre-game; receiving yards 17/14/9/4.6 vs 19.5). (b) `sd_live = sd_pre · remaining_share^k` with k = 0.40
+passing, 0.48 receiving yards, 0.45 receptions, 0.60 rushing (sqrt was too tight late for passing — garbage time —
+and too wide for rushing), which puts the standardised error's sd at 0.95–1.06 at every checkpoint. Known gap: the
+live sd is a scale on the pre-game empirical residual shape; coverage at ±1 sd is 0.72–0.89 (heavier tails than
+Normal), so P(over) near the line is fine but tail probabilities are approximate. A live residual ECDF from the
+replay is the next step once in-game odds are polled.
+
+**Paper period.** Four weeks paper-only (`LIVE_PAPER_ONLY=true`): every alert is logged as an unpublished
+`cards(source='live')` row and graded; CLV vs close (pre-game) and vs +30 s / next dead ball (in-game) is the headline
+metric; weekly numbers go to `docs/TODO.md`. The Discord API is unreachable from the Actions runners and the dev
+sandboxes, so delivery runs only on the hosted worker (Fly.io/Railway configs in `/live`).

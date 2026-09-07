@@ -1,0 +1,20 @@
+[project]
+name = "nfl_edge_live"
+version = "0.1.0"
+description = "NFL Edge Finder live edge bot: line watcher, in-game model, paper alerts"
+requires-python = ">=3.11"
+dependencies = [
+  "nfl_edge",          # the pipeline package (pip install -e ../pipeline) — models, db, config
+  "requests",
+  "pandas>=1.5,<3",
+  "numpy",
+  "python-dotenv",
+  "sqlalchemy>=2",
+  "psycopg2-binary",
+]
+[project.optional-dependencies]
+dev = ["pytest"]
+[tool.setuptools.packages.find]
+include = ["live*"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]

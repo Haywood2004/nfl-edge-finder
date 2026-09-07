@@ -1,0 +1,19 @@
+{"boxscore": {"teams": [
+  {"team": {"abbreviation": "ATL"}, "statistics": [{"name": "totalOffensivePlays", "displayValue": "58"}, {"name": "completionAttempts", "displayValue": "21-30"}, {"name": "rushingAttempts", "displayValue": "26"}]},
+  {"team": {"abbreviation": "WSH"}, "statistics": [{"name": "totalOffensivePlays", "displayValue": "61"}, {"name": "completionAttempts", "displayValue": "17/32"}, {"name": "rushingAttempts", "displayValue": "28"}]}],
+ "players": [
+  {"team": {"abbreviation": "ATL"}, "statistics": [
+    {"name": "passing", "keys": ["completions/passingAttempts", "passingYards", "yardsPerPassAttempt", "passingTouchdowns", "interceptions", "sacks-sackYardsLost", "adjQBR", "QBRating"],
+     "athletes": [{"athlete": {"id": "4360310", "displayName": "Michael Penix Jr.", "position": {"abbreviation": "QB"}}, "stats": ["21/30", "245", "8.2", "2", "0", "2-11", "70.1", "112.3"]}]},
+    {"name": "rushing", "keys": ["rushingAttempts", "rushingYards", "yardsPerRushAttempt", "rushingTouchdowns", "longRushing"],
+     "athletes": [{"athlete": {"id": "4429160", "displayName": "Bijan Robinson"}, "stats": ["19", "104", "5.5", "1", "27"]}]},
+    {"name": "receiving", "keys": ["receptions", "receivingYards", "yardsPerReception", "receivingTouchdowns", "longReception", "receivingTargets"],
+     "athletes": [{"athlete": {"id": "4258173", "displayName": "Drake London"}, "stats": ["8", "112", "14.0", "1", "34", "11"]},
+                  {"athlete": {"id": "4429160", "displayName": "Bijan Robinson"}, "stats": ["4", "31", "7.8", "0", "12", "5"]}]}]},
+  {"team": {"abbreviation": "WSH"}, "statistics": [
+    {"name": "passing", "keys": ["completions/passingAttempts", "passingYards", "yardsPerPassAttempt", "passingTouchdowns", "interceptions", "sacks-sackYardsLost", "adjQBR", "QBRating"],
+     "athletes": [{"athlete": {"id": "4426348", "displayName": "Jayden Daniels"}, "stats": ["17/32", "198", "6.2", "1", "1", "3-19", "44.0", "72.1"]}]},
+    {"name": "receiving", "keys": ["receptions", "receivingYards", "yardsPerReception", "receivingTouchdowns", "longReception", "receivingTargets"],
+     "athletes": [{"athlete": {"id": "15818", "displayName": "Terry McLaurin"}, "stats": ["6", "88", "14.7", "1", "40", "9"]}]}]}]},
+ "header": {"competitions": [{"status": {"type": {"state": "in"}}, "competitors": [{"team": {"abbreviation": "ATL"}, "homeAway": "home", "score": "24"}, {"team": {"abbreviation": "WSH"}, "homeAway": "away", "score": "17"}]}]},
+ "drives": {"previous": []}}
