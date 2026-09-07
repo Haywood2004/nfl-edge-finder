@@ -47,17 +47,17 @@ What to look at:
 
 ## Requests from live bot (2026-09-07)
 Filed by the live-bot agent (`docs/AGENT_LIVE_BOT.md`); these are pipeline/web changes the bot must not make itself.
-- [ ] **Grader is passing-only.** `grading/grade.py` reads `raw_weekly_stats.passing_yards` for every card, so a
+- [x] **Grader is passing-only.** (done 2026-09-07: market-aware, voids on zero usage, moneylines by final score) `grading/grade.py` reads `raw_weekly_stats.passing_yards` for every card, so a
       receiving-yards / receptions / rushing card is graded against passing yards (0 for a WR → every Under "wins").
       Switch the stat column on `c.market` (and void on 0 targets/carries, as `backtest_lines.py` does). Live cards
       for those markets will be graded wrong until this lands; `python -m live report` grades market-aware itself.
-- [ ] **Calibrator training set should exclude `source='live'` for now.** `models/calibration.py::_live_rows` joins
+- [x] **Calibrator training set should exclude `source='live'` for now.** (done) `models/calibration.py::_live_rows` joins
       `grades` to all `cards`; live paper alerts (weighted 3×) would leak into the pre-game calibrator. Add
       `AND c.source = 'model'` until a retrain with an `is_live` feature is agreed (brief: only via a PR with graded live rows).
-- [ ] **Web: hide `source='live'` cards** from the screener's "Everything priced" and the track record during the paper
+- [x] **Web: hide `source='live'` cards** (done: screener, track record, bets.csv, freshness all filter source='model') from the screener's "Everything priced" and the track record during the paper
       period (`web/src/lib/queries.ts`; the rows are `published=false` but the board shows unpublished rows). A "Live" tab
       is the decision after four weeks.
-- [ ] `db/schema.sql`: the two `ALTER TABLE cards … prob_calibrated/edge_calibrated` lines ran before `CREATE TABLE cards`
+- [x] `db/schema.sql`: the two `ALTER TABLE cards … prob_calibrated/edge_calibrated` lines ran before `CREATE TABLE cards`
       and failed on a fresh database; moved to the end of the file in the live-bot PR (idempotent, no effect on existing DBs).
 - [ ] `grades.closing_price_american` placeholder: the live bot stores the closing price in `live_clv`; happy to share code.
 

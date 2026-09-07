@@ -10,7 +10,7 @@ export default async function TrackRecord() {
   const rows = await sql`
     SELECT c.season, c.week, c.player_name, c.team, c.market, c.side, c.line, c.price_american, c.book, c.edge, c.confidence,
            g.actual, g.result, g.profit_units, g.clv_prob
-    FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published ORDER BY c.kickoff_utc DESC, c.score DESC LIMIT 500`;
+    FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published AND c.source = 'model' ORDER BY c.kickoff_utc DESC, c.score DESC LIMIT 500`;
   const wr = t.wins + t.losses ? t.wins / (t.wins + t.losses) : 0;
   const roi = t.n ? t.units / t.n : 0;
   const kpis: [string, string, string?][] = [

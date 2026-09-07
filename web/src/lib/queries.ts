@@ -9,7 +9,7 @@ export type Card = {
   player_name: string; position: string; team: string; opponent: string; kickoff_utc: string; market: string;
   side: string; line: number; price_american: number; price_decimal: number; book: string; snapshot_id: number;
   projection_id: number; model_run_id: number; model_prob: number; market_prob: number; edge: number;
-  ev_per_unit: number; confidence: number; score: number; published: boolean; factors: Factor[];
+  ev_per_unit: number; confidence: number; score: number; published: boolean; source?: string; factors: Factor[];
   line_open: number | null; book_prices: { book: string; line: number; over: number; under: number }[];
   trend_badges: string[]; home_team: string; away_team: string;
   /** "blend" (default, what the pipeline publishes) or "raw" (synthetic card from the un-anchored ratings model) */
@@ -21,12 +21,12 @@ export type Card = {
 /** Cards from the most recent scoring run for the current target week. */
 export async function latestCards(opts: { publishedOnly?: boolean } = {}) {
   const rows = await sql<Card[]>`
-    WITH tw AS (SELECT season, week FROM cards ORDER BY kickoff_utc DESC, created_at DESC LIMIT 1),
-         run AS (SELECT market, max(created_at) AS ts FROM cards c JOIN tw USING (season, week) GROUP BY market)
+    WITH tw AS (SELECT season, week FROM cards WHERE source = 'model' ORDER BY kickoff_utc DESC, created_at DESC LIMIT 1),
+         run AS (SELECT market, max(created_at) AS ts FROM cards c JOIN tw USING (season, week) WHERE c.source = 'model' GROUP BY market)
     SELECT c.*, g.home_team, g.away_team
     FROM cards c JOIN tw USING (season, week) JOIN run ON c.created_at = run.ts AND c.market = run.market
     JOIN raw_games g USING (game_id)
-    ${opts.publishedOnly ? sql`WHERE c.published` : sql``}
+    WHERE c.source = 'model' ${opts.publishedOnly ? sql`AND c.published` : sql``}
     ORDER BY c.score DESC, c.edge DESC`;
   return rows;
 }
@@ -89,8 +89,8 @@ export async function teamInjuries(season: number, week: number, teams: string[]
 
 export async function freshness() {
   const [r] = await sql`
-    SELECT (SELECT max(taken_at) FROM odds_snapshots) AS odds_at,
-           (SELECT max(created_at) FROM cards) AS scored_at,
+    SELECT (SELECT max(taken_at) FROM odds_snapshots WHERE label NOT LIKE 'live_%') AS odds_at,
+           (SELECT max(created_at) FROM cards WHERE source = 'model') AS scored_at,
            (SELECT max(trained_at) FROM model_runs) AS trained_at,
            (SELECT max(observed_at) FROM raw_injuries) AS injuries_at,
            (SELECT max(finished_at) FROM pipeline_runs WHERE job LIKE 'ingest_%' AND status='ok') AS ingested_at`;
@@ -102,7 +102,7 @@ export async function trackRecord() {
     SELECT count(*)::int AS n, sum((result='win')::int)::int AS wins, sum((result='loss')::int)::int AS losses,
            sum((result='push')::int)::int AS pushes, coalesce(sum(profit_units),0)::float AS units,
            avg(clv_prob)::float AS clv
-    FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published`;
+    FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published AND c.source = 'model'`;
   return r as { n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null };
 }
 
@@ -124,7 +124,7 @@ export async function latestGameProjections() {
 
 export async function gameCards(gameId: string) {
   return sql<Card[]>`
-    WITH run AS (SELECT max(created_at) AS ts FROM cards WHERE game_id = ${gameId} AND market = 'h2h')
+    WITH run AS (SELECT max(created_at) AS ts FROM cards WHERE game_id = ${gameId} AND market = 'h2h' AND source = 'model')
     SELECT c.*, g.home_team, g.away_team FROM cards c JOIN raw_games g USING (game_id) JOIN run ON c.created_at = run.ts
     WHERE c.game_id = ${gameId} AND c.market = 'h2h' ORDER BY c.edge DESC`;
 }
@@ -145,7 +145,7 @@ export async function trackBreakdown() {
   return sql<{ kind: string; key: string; n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null }[]>`
     WITH g AS (
       SELECT c.market, c.week, CASE WHEN c.edge >= (CASE WHEN c.market='h2h' THEN 0.15 WHEN c.market='player_pass_yds' THEN 0.06 ELSE 0.08 END) THEN 'flagged' ELSE 'paper' END AS tier, gr.result, gr.profit_units, gr.clv_prob
-      FROM grades gr JOIN cards c ON c.id = gr.card_id)
+      FROM grades gr JOIN cards c ON c.id = gr.card_id WHERE c.source = 'model')
     SELECT 'market' AS kind, market AS key, count(*)::int n, sum((result='win')::int)::int wins, sum((result='loss')::int)::int losses,
            sum((result='push')::int)::int pushes, coalesce(sum(profit_units),0)::float units, avg(clv_prob)::float clv FROM g GROUP BY market
     UNION ALL

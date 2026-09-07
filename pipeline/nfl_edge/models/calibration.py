@@ -106,7 +106,8 @@ def _live_rows() -> pd.DataFrame:
                               f.features
                        FROM grades gr JOIN cards c ON c.id = gr.card_id
                        JOIN feat_player_game f ON f.season=c.season AND f.week=c.week AND f.player_id=c.player_id AND f.game_id=c.game_id
-                       WHERE gr.result IN ('win','loss') AND c.market = ANY(:m)""", {"m": MARKETS})
+                       WHERE gr.result IN ('win','loss') AND c.market = ANY(:m)
+                         AND c.source = 'model'   -- live-bot paper alerts stay out until an is_live feature is agreed (docs/LIVE.md)""", {"m": MARKETS})
     out = []
     for _, x in r.iterrows():
         X = json.loads(x.features) if isinstance(x.features, str) else x.features

@@ -139,3 +139,16 @@ replay is the next step once in-game odds are polled.
 `cards(source='live')` row and graded; CLV vs close (pre-game) and vs +30 s / next dead ball (in-game) is the headline
 metric; weekly numbers go to `docs/TODO.md`. The Discord API is unreachable from the Actions runners and the dev
 sandboxes, so delivery runs only on the hosted worker (Fly.io/Railway configs in `/live`).
+
+## 36. Live-bot PR #1 merged; grader made market-aware; live rows fenced off (2026-09-07)
+
+Review against `AGENTS.md`: 75 tests pass locally (parity test needs a DB with current cards), writes are confined to
+`live_*` + `cards(source='live', published=false)` + one `odds_snapshots` row per poll (label `live_*`, markets
+prefixed `live:`) + `api_usage`. Verified the scorer's `:m = ANY(markets)` queries and the grader's CLV lookup
+(odds_lines only) never see live polls. One real hazard found: the web's `latestCards` picked the newest
+`created_at` per market, so a live paper card would have replaced the whole market's screener run — every card
+query (screener, track record, bets.csv, freshness) now filters `source='model'`. Requests actioned: the grader
+reads the stat for the card's market (passing → passing_yards/attempts, receiving yards → receiving_yards/targets,
+receptions → receptions/targets, rushing → rushing_yards/carries), voids on zero usage as the backtest does, and
+grades moneylines from the final score; the calibrator's live-row query excludes `source='live'` until an
+`is_live` feature is agreed. Live alerts stay invisible on the site through the four-week paper period.

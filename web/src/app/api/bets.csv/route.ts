@@ -18,12 +18,12 @@ export async function GET() {
       SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side)
              c.*, g.result, g.actual, g.profit_units, g.clv_prob
       FROM cards c LEFT JOIN grades g ON g.card_id = c.id
-      WHERE c.edge >= ${PAPER_MIN_EDGE} AND c.confidence >= ${MIN_CONF} AND c.created_at < c.kickoff_utc
+      WHERE c.source = 'model' AND c.edge >= ${PAPER_MIN_EDGE} AND c.confidence >= ${MIN_CONF} AND c.created_at < c.kickoff_utc
       ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at ASC),
     latest AS (
       SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side)
              c.season, c.week, c.market, c.player_name, c.side, c.prob_calibrated - c.market_prob AS edge_cal_latest
-      FROM cards c WHERE c.prob_calibrated IS NOT NULL
+      FROM cards c WHERE c.prob_calibrated IS NOT NULL AND c.source = 'model'
       ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at DESC)
     SELECT q.*,
            -- cards locked before the calibrator existed borrow the latest calibrated shrink for the same pick
