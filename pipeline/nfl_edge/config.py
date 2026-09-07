@@ -29,11 +29,9 @@ PUBLISH_MIN_EDGE = PUBLISH_MIN_EDGE_PROPS   # back-compat alias
 # edge (2025: rec yds ≥8% → 1,313 bets +6.8%; receptions ≥8% → 1,343 bets +6.7%). Rushing is weak (+1.6% at 6%)
 # and stays provisional. Passing: 4–8% is the money zone, ≥10% loses.
 PUBLISH_MIN_EDGE_BY_MARKET = {
-    "player_pass_yds": PUBLISH_MIN_EDGE_PROPS,
-    "player_reception_yds": float(os.environ.get("BAR_RECY", "0.08")),
-    "player_receptions": float(os.environ.get("BAR_REC", "0.08")),
-    "player_rush_yds": float(os.environ.get("BAR_RUY", "0.08")),
-    "h2h": PUBLISH_MIN_EDGE_ML,
+    # DK/FD-only closing-line backtest (DECISIONS.md #37): rec yds ≥10% → +7.7% ROI (621 bets), receptions ≥15% → +6.2% (282),
+    # rush ≥6% → +2.9% (427), passing ≥8% → −0.5% over 2023–25 (2025 alone negative at every bar — see MODEL.md)
+    "player_pass_yds": 0.08, "player_reception_yds": 0.10, "player_receptions": 0.15, "player_rush_yds": 0.06, "h2h": PUBLISH_MIN_EDGE_ML,
 }
 PUBLISH_MIN_CONFIDENCE = 55
 
@@ -55,4 +53,12 @@ GAME_MARKETS = ["h2h", "spreads", "totals"]
 SHARP_BOOK = "pinnacle"
 SHARP_REGION = "eu"
 SHARP_SNAPSHOT_LABELS = ("tue_open", "sun_am", "pre_kick", "manual")
-NON_BETTABLE_BOOKS = {"pinnacle"}
+NON_BETTABLE_BOOKS: set[str] = set()   # books that may never be a card's price (none now: Pinnacle is a licensed Ontario venue)
+# Venues we actually bet at (DECISIONS.md #37): only these books' lines are priced, alerted, backtested and shown
+# as "best price"; every book is still STORED (odds_lines is append-only) so the choice can be revisited.
+# Empty set = every book in the feed. Pinnacle is both a venue and the sharp reference (SHARP_BOOK).
+BETTABLE_BOOKS = {"draftkings", "fanduel", "pinnacle"}
+
+
+def is_bettable(book: str) -> bool:
+    return book not in NON_BETTABLE_BOOKS and (not BETTABLE_BOOKS or book in BETTABLE_BOOKS)

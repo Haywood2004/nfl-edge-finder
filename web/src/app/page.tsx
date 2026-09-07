@@ -3,7 +3,7 @@ import { Freshness } from "@/components/Freshness";
 import { GameTile, GameLegend } from "@/components/GameTile";
 import { Screener } from "@/components/Screener";
 import { ago, pct, signedPct } from "@/lib/format";
-import { BAR_ML, clearsBar } from "@/lib/thresholds";
+import { BAR_ML, clearsBar, BARS_TEXT, VENUES_TEXT } from "@/lib/thresholds";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +21,8 @@ export default async function Home() {
           <p className="eyebrow">{wk ? `${wk.season} season · Week ${wk.week}` : "This week"}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Screener</h1>
           <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-muted">
-            Every prop line the model priced this week. <b className="text-fg">Bets</b> are the ones that clear each market&apos;s bar
-            (passing ≥ 6%, receiving &amp; rushing ≥ 8% edge, confidence ≥ 55) — the bars where the closing-line backtests pay. Everything else is visible under &ldquo;Everything priced&rdquo;.
+            Every prop line the model priced this week at {VENUES_TEXT}. <b className="text-fg">Bets</b> are the ones that clear each market&apos;s bar
+            ({BARS_TEXT} edge, confidence ≥ 55) — the bars where the closing-line backtests at these venues pay. Everything else is visible under &ldquo;Everything priced&rdquo;.
           </p>
           <div className="mt-2"><Freshness /></div>
         </div>

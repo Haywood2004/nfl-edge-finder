@@ -16,7 +16,7 @@ from pathlib import Path
 import pandas as pd
 from .. import db
 from ..sources.odds_api import OddsAPI, load_payload, american, implied
-from ..config import NON_BETTABLE_BOOKS, SHARP_BOOK, SHARP_REGION, SHARP_SNAPSHOT_LABELS
+from ..config import NON_BETTABLE_BOOKS, SHARP_BOOK, SHARP_REGION, SHARP_SNAPSHOT_LABELS, is_bettable
 from ..teams import ODDS_API_TO_ABBR
 from ..sources import polymarket
 from .nflverse_jobs import current_season
@@ -92,8 +92,8 @@ def build_consensus(snapshot_id: int) -> int:
                 s = ia + ib
                 pa.append(ia / s); pb.append(ib / s)
             for side in (a, b):
-                if book in NON_BETTABLE_BOOKS:
-                    continue   # sharp reference: informs the consensus, never the "best price"
+                if not is_bettable(book):
+                    continue   # sharp reference / non-venue books inform the consensus, never the "best price"
                 if side in d and (best[side] is None or d[side].price_decimal > best[side].price_decimal):
                     best[side] = d[side]
         if not pa or best[a] is None or best[b] is None:

@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import PUBLISH_MIN_EDGE_ML as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, NON_BETTABLE_BOOKS, SHARP_BOOK
+from ..config import PUBLISH_MIN_EDGE_ML as PUBLISH_MIN_EDGE, PUBLISH_MIN_CONFIDENCE, NON_BETTABLE_BOOKS, SHARP_BOOK, is_bettable
 from ..ingest.odds_jobs import target_week
 from ..features.team_ratings import game_features
 from ..models.moneyline import load_latest, MARKET
@@ -62,12 +62,12 @@ def score_moneylines(week: int | None = None) -> int:
                 dh, da = float(h.price_decimal.iloc[0]), float(a.price_decimal.iloc[0])
                 if bk == "polymarket":
                     poly = {"dec_home": dh, "dec_away": da, "p_home": (1 / dh) / (1 / dh + 1 / da)}
-                elif bk in NON_BETTABLE_BOOKS:
+                else:
                     if bk == SHARP_BOOK:
                         sharp = {"dec_home": dh, "dec_away": da, "p_home": (1 / dh) / (1 / dh + 1 / da)}
-                else:
-                    ih, ia = 1 / dh, 1 / da
-                    books[bk] = {"dec_home": dh, "dec_away": da, "p_home": ih / (ih + ia)}
+                    if is_bettable(bk):
+                        ih, ia = 1 / dh, 1 / da
+                        books[bk] = {"dec_home": dh, "dec_away": da, "p_home": ih / (ih + ia)}
             # market reference: the sharp book's no-vig number when we have it, else the mean of the US books
             p_books = sharp["p_home"] if sharp else (float(np.mean([b["p_home"] for b in books.values()])) if books else None)
             p_poly = poly["p_home"] if poly else None

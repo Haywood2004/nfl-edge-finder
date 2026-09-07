@@ -152,3 +152,25 @@ reads the stat for the card's market (passing → passing_yards/attempts, receiv
 receptions → receptions/targets, rushing → rushing_yards/carries), voids on zero usage as the backtest does, and
 grades moneylines from the final score; the calibrator's live-row query excludes `source='live'` until an
 `is_live` feature is agreed. Live alerts stay invisible on the site through the four-week paper period.
+
+## 37. Venues: price only DraftKings, FanDuel and Pinnacle; bars retuned to those books (2026-09-07)
+
+Haywood bets at DraftKings, FanDuel and Pinnacle (all licensed in Ontario). `config.BETTABLE_BOOKS` now restricts
+which books can be a card's price, the "best price", the consensus line for anchoring, the live bot's venues and the
+closing-line backtest. Every book is still stored (append-only) so this can be revisited. Pinnacle is both a venue and
+the sharp reference (`SHARP_BOOK`); `NON_BETTABLE_BOOKS` is now empty.
+
+**This shrank the backtested edge a lot**, which is the honest finding: much of the all-book "edge" was price-shopping
+softer books (Bovada, BetOnline, BetMGM, Caesars, BetRivers, Fanatics). Against DK/FD closing lines only:
+
+| market | all-book bar → ROI (old) | DK/FD by bar |
+|---|---|---|
+| passing yds (2023–25) | ≥6% → +3.7% (607 bets) | ≥4% +2.2% (695) · ≥6% −2.8% (428) · ≥8% −0.5% (233); 2025 negative at every bar |
+| receiving yds (2025) | ≥8% → +6.8% (1,313) | ≥8% +3.4% (890) · **≥10% +7.7% (621)** · ≥15% +3.4% (196) |
+| receptions (2025) | ≥8% → +6.7% (1,343) | ≥8% +0.2% (956) · ≥10% +0.5% (693) · **≥15% +6.2% (282)** |
+| rushing yds (2025) | ≥6% → +1.6% (547) | **≥6% +2.9% (427)** · ≥8% −2.5% (307) · ≥15% +3.3% (99) |
+
+New bars: passing 8%, receiving yards 10%, receptions 15%, rushing 6%. Passing is kept at 8% as a compromise
+(three-season ROI ≈ 0, 2025 clearly negative) and should be watched; if the live record at DK/FD stays negative through
+Week 6 it should be demoted to "priced, not bet". The calibrator retrains on the DK/FD-only backtest, so expected EV on
+the screener will drop to match. Pinnacle has no odds history in the fixtures, so the backtest is DK/FD only.

@@ -13,7 +13,7 @@ import re
 import numpy as np
 import pandas as pd
 from .. import db
-from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE_BY_MARKET, PUBLISH_MIN_EDGE_PROPS, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W, NON_BETTABLE_BOOKS, SHARP_BOOK
+from ..config import LEVEL_ANCHOR_W, PUBLISH_MIN_EDGE_BY_MARKET, PUBLISH_MIN_EDGE_PROPS, PUBLISH_MIN_CONFIDENCE, MARKET_ANCHOR_W, NON_BETTABLE_BOOKS, SHARP_BOOK, is_bettable
 from ..ingest.odds_jobs import target_week
 from ..models.passing_yards import load_latest as load_latest_py, MARKET as PASS_MARKET
 from ..models.player_props import load_latest as load_latest_prop, SPECS
@@ -138,10 +138,9 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                        "over_dec": float(o.price_decimal.iloc[0]), "under_dec": float(u.price_decimal.iloc[0]),
                        "over_american": int(o.price_american.iloc[0]), "under_american": int(u.price_american.iloc[0]),
                        "over_fair": po / (po + pu), "under_fair": pu / (po + pu)}
-                if book in NON_BETTABLE_BOOKS:
-                    # keep the sharp book's main line (the alternate priced closest to even money)
-                    if book == SHARP_BOOK and (sharp is None or abs(row["over_dec"] - row["under_dec"]) < abs(sharp["over_dec"] - sharp["under_dec"])):
-                        sharp = row
+                if book == SHARP_BOOK and (sharp is None or abs(row["over_dec"] - row["under_dec"]) < abs(sharp["over_dec"] - sharp["under_dec"])):
+                    sharp = row   # the sharp reference: its main line = the alternate priced closest to even money
+                if not is_bettable(book):
                     continue
                 books.append(row)
             if not books:
@@ -235,7 +234,8 @@ def score_week(week: int | None = None, market: str = PASS_MARKET) -> int:
                     "published": bool(c["edge"] >= PUBLISH_MIN_EDGE and conf >= PUBLISH_MIN_CONFIDENCE),
                     "factors": factors, "line_open": open_line, "line_open_snapshot_id": open_id,
                     "book_prices": [{"book": b["book"], "line": b["line"], "over": b["over_american"], "under": b["under_american"]} for b in books]
-                                   + ([{"book": sharp["book"], "line": sharp["line"], "over": sharp["over_american"], "under": sharp["under_american"]}] if sharp else []),
+                                   + ([{"book": sharp["book"], "line": sharp["line"], "over": sharp["over_american"], "under": sharp["under_american"]}]
+                                      if sharp and not any(b["book"] == sharp["book"] and b["line"] == sharp["line"] for b in books) else []),
                     "_proj_idx": len(proj_rows) - 1,
                 })
 

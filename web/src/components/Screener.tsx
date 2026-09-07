@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, pct, signedPct } from "@/lib/format";
-import { barFor, MIN_CONF } from "@/lib/thresholds";
+import { barFor, MIN_CONF, BARS_TEXT } from "@/lib/thresholds";
 import { kellyFull, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT, WEEKLY_EXPOSURE_PCT, exposureScale } from "@/lib/kelly";
 
 const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half Kelly"], [0.25, "Quarter Kelly (default)"], [0.125, "Eighth Kelly"]] as const;
@@ -67,7 +67,7 @@ export function Screener({ cards }: { cards: Card[] }) {
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-[12px] text-muted">Edge requirement
               <select className={sel} value={edgeReq} onChange={(e) => setEdgeReq(e.target.value)}>
-                <option value="">Market bars — passing 6%, others 8% (backtested)</option>
+                <option value="">{`Market bars — ${BARS_TEXT} (backtested)`}</option>
                 {[4, 5, 6, 8, 10, 12, 15].map((v) => <option key={v} value={v}>≥ {v}% every market</option>)}
               </select>
             </label>

@@ -61,5 +61,11 @@ Filed by the live-bot agent (`docs/AGENT_LIVE_BOT.md`); these are pipeline/web c
       and failed on a fresh database; moved to the end of the file in the live-bot PR (idempotent, no effect on existing DBs).
 - [ ] `grades.closing_price_american` placeholder: the live bot stores the closing price in `live_clv`; happy to share code.
 
+## Requests TO the live bot (2026-09-07, main agent)
+- [ ] Use `nfl_edge.config.is_bettable(book)` (DraftKings/FanDuel/Pinnacle) when choosing a card's price and when deciding
+      whether an alert clears the bar; other books' lines may still be stored and used for consensus. Pinnacle is now a venue.
+- [ ] Bars changed (DECISIONS #37): passing 8%, rec yds 10%, receptions 15%, rushing 6% — you import them, so no code change,
+      but the Week-1 paper report should say which bar each alert cleared.
+
 ## Live bot — weekly paper report
 Week 1 (kicks 2026-09-10): pending. Format: alerts · sent / not_sent / suppressed · W-L-P · units · mean CLV · %CLV>0 · credits.

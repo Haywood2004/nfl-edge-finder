@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { MARKET_NAMES, pct, signedPct } from "@/lib/format";
-import { barFor } from "@/lib/thresholds";
+import { barFor, BARS_TEXT, VENUES_TEXT } from "@/lib/thresholds";
 import { kellyFull, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT, WEEKLY_EXPOSURE_PCT, exposureScale } from "@/lib/kelly";
 
 const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half Kelly"], [0.25, "Quarter Kelly (default)"], [0.125, "Eighth Kelly"]] as const;
@@ -123,7 +123,7 @@ export function BacktestLab() {
             </label>
             <label className="flex flex-col gap-1 text-[12px] text-muted">Edge requirement
               <select className={sel} value={edgeReq} onChange={(e) => setEdgeReq(e.target.value)}>
-                <option value="">Market bars — passing 6%, others 8%</option>
+                <option value="">{`Market bars — ${BARS_TEXT}`}</option>
                 {[2, 3, 4, 5, 6, 8, 10, 12, 15, 20].map((v) => <option key={v} value={v}>≥ {v}% every market</option>)}
               </select>
             </label>
@@ -195,7 +195,7 @@ export function BacktestLab() {
       </section>
 
       <p className="text-[12px] leading-relaxed text-muted">
-        Every bet is placed at the real closing line and best available US price (The Odds API history), graded against the actual stat, and voided
+        Every bet is placed at the real closing line and the best price among our venues ({VENUES_TEXT}; Pinnacle has no history yet, so DraftKings/FanDuel here), graded against the actual stat, and voided
         when the player recorded no attempt. Bankroll is held at {bankroll}u throughout (no compounding) so units are comparable with the live track
         record. Confidence is not applied here — it is computed live from data that isn&apos;t stored for historical weeks. Passing yards cover 2023–25;
         receiving yards, receptions and rushing yards cover 2025 only, so those results are one season of evidence, not three.

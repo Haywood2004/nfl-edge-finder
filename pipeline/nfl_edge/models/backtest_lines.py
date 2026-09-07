@@ -17,7 +17,7 @@ import json
 import re
 import numpy as np
 import pandas as pd
-from ..config import ROOT, LEVEL_ANCHOR_W, MARKET_ANCHOR_W
+from ..config import is_bettable, ROOT, LEVEL_ANCHOR_W, MARKET_ANCHOR_W
 from ..ingest.odds_history import load_fixtures
 from . import passing_yards as PY
 
@@ -30,7 +30,7 @@ def _norm(s: str) -> str:
 
 def main_lines(lines: pd.DataFrame, market: str = "player_pass_yds") -> pd.DataFrame:
     """One two-way price per (game, player, book): the book's main line = the alternate closest to even money."""
-    l = lines[lines.market == market].copy()
+    l = lines[(lines.market == market) & lines.bookmaker.map(is_bettable)].copy()   # only the venues we bet at
     l["nname"] = l.player.map(_norm)
     o = l[l.side == "Over"][["season", "week", "game_id", "nname", "bookmaker", "line", "price_decimal"]].rename(columns={"price_decimal": "over_dec"})
     u = l[l.side == "Under"][["game_id", "nname", "bookmaker", "line", "price_decimal"]].rename(columns={"price_decimal": "under_dec"})
