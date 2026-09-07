@@ -123,6 +123,8 @@ python -m live worker              # the hosted entrypoint
 cd live && pytest                  # 75 tests; DB-backed ones skip without DATABASE_URL
 ```
 
+Schema: `python -m live migrate` applies the live block of `db/schema.sql` idempotently; the worker runs it on every start, so a fresh Neon database gets the `live_*` tables and `cards.source` without a manual step.
+
 Hosting: one always-on worker (Fly.io `live/fly.toml` or Railway `live/railway.json`, Dockerfile in `live/`).
 Secrets in the host's env: `DATABASE_URL`, `ODDS_API_KEY`, `DISCORD_WEBHOOK_URL` (optional `TELEGRAM_BOT_TOKEN`,
 `TELEGRAM_CHAT_ID`). Knobs: `LIVE_CREDIT_BUDGET`, `LIVE_INGAME_ENABLED`, `LIVE_PAPER_ONLY`, `LIVE_DRY_RUN`, the
