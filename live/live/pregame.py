@@ -114,7 +114,16 @@ class Watcher:
         self.budget.refresh()
         self.refresh_events()
         n = 0
-        for _, eid, m, mins in self.due()[:max_polls]:
+        due = self.due()[:max_polls]
+        ok, why = self.budget.can_spend(1)
+        if due and not ok:
+            # one line per tick while the guard is tripped, and only every ~10 min, not 16 lines every 30 s
+            if time.time() - getattr(self, "_guard_logged", 0) > 600:
+                print(f"[pregame] budget guard: {why} — {len(due)} event-market(s) due, none polled")
+                self._guard_logged = time.time()
+            self.alerter.flush()
+            return 0
+        for _, eid, m, mins in due:
             n += self.poll(eid, m, mins)
         self.alerter.flush()
         return n
