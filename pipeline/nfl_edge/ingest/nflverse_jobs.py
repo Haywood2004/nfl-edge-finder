@@ -134,8 +134,14 @@ def ingest_injuries(seasons: list[int] | None = None) -> int:
             if "season_type" not in i.columns:  # older release files name it game_type
                 i = i.rename(columns={"game_type": "season_type"})
             i = i[i.gsis_id.notna()]
-            i = i[["season", "week", "season_type", "team", "gsis_id", "full_name", "position",
-                   "report_primary_injury", "report_status", "practice_primary_injury", "practice_status"]].copy()
+            # the 2026 release dropped report_primary_injury/practice_primary_injury from the early-season file;
+            # tolerate any missing optional column rather than failing the whole weekly job (graceful degradation)
+            want = ["season", "week", "season_type", "team", "gsis_id", "full_name", "position",
+                    "report_primary_injury", "report_status", "practice_primary_injury", "practice_status"]
+            missing = [c for c in want if c not in i.columns]
+            if missing:
+                print(f"[injuries] {s}: columns missing in nflverse file, filled with NULL: {missing}")
+            i = i.reindex(columns=want).copy()
             i["team"] = i["team"].map(norm)
             i = i.drop_duplicates(["season", "week", "season_type", "team", "gsis_id", "report_status", "practice_status"])
             i["source"] = "nflverse"
