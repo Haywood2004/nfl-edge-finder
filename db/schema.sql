@@ -628,3 +628,24 @@ CREATE TABLE IF NOT EXISTS live_projections (
   sd_live          numeric NOT NULL
 );
 CREATE INDEX IF NOT EXISTS live_projections_game ON live_projections(game_id, player_id, market);
+
+-- Same-day box scores from ESPN (ingest/espn_boxscores.py) — grading fallback until nflverse weekly stats land.
+CREATE TABLE IF NOT EXISTS raw_boxscores_espn (
+  season int NOT NULL, week int NOT NULL, game_id text NOT NULL, player_id text NOT NULL,
+  espn_id text, player_name text, team text,
+  attempts int, completions int, passing_yards numeric, carries int, rushing_yards numeric,
+  targets int, receptions int, receiving_yards numeric,
+  fetched_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (season, week, game_id, player_id)
+);
+
+-- Bets Haywood actually placed (logged from the screener's "placed" button). Graded through cards → grades.
+CREATE TABLE IF NOT EXISTS placed_bets (
+  id bigserial PRIMARY KEY,
+  placed_at timestamptz NOT NULL DEFAULT now(),
+  card_id bigint NOT NULL REFERENCES cards(id),
+  stake_units numeric NOT NULL,
+  book text, price_american int, line numeric,
+  note text
+);
+CREATE INDEX IF NOT EXISTS placed_bets_card ON placed_bets(card_id);
