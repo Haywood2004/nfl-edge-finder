@@ -13,18 +13,18 @@ export async function GET(req: Request) {
     return new Response(null, { status: token && req.headers.get("x-placed-token") === token ? 204 : 401 });
   }
   if (url.searchParams.get("candidates")) {
-    // picks you could log: one row per (week, market, player, side, LINE) — the last version published before kickoff —
-    // for the last 14 days. The line is part of the key because a card is graded at its own line, so the row you log
-    // must be the line you actually bet (post-kickoff re-scores are excluded).
+    // picks you could log: one row per (week, market, player, side) — the last version published before kickoff, i.e.
+    // the line the screener showed last — for the last 14 days. If you bet a different line, POST resolves the card
+    // version at that line (a card is graded at its own line, so the logged card must carry the line you bet).
     const raw = await sql`
-      SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side, c.line)
+      SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side)
              c.id AS card_id, c.season, c.week, c.player_name, c.team, c.opponent, c.market, c.side, c.line, c.book, c.price_american,
              c.price_decimal, c.model_prob, c.prob_calibrated, c.confidence, c.created_at,
              c.kickoff_utc, c.edge, c.edge_calibrated, g.result, g.actual
       FROM cards c LEFT JOIN grades g ON g.card_id = c.id
       WHERE c.source = 'model' AND c.market <> 'h2h' AND c.kickoff_utc > now() - interval '14 days' AND c.edge >= 0.04
         AND c.created_at < c.kickoff_utc
-      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.line, c.created_at DESC`;
+      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at DESC`;
     // suggested stake = what the screener shows: ¼-Kelly on the calibrated prob, then the week's exposure scaling over
     // the bets that clear the bar (latest pre-kick version per pick) — lib/kelly.ts defaults
     const stakeRaw = (r: (typeof raw)[number]) => kellyStake(r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob), Number(r.price_decimal));
@@ -59,10 +59,27 @@ export async function POST(req: Request) {
     await sql`DELETE FROM placed_bets WHERE card_id = ${Number(card_id)}`;
     return Response.json({ ok: true, removed: true });
   }
-  await sql`DELETE FROM placed_bets WHERE card_id = ${Number(card_id)}`;
+  // a bet at a different line than the card shown → log the card version that carries that line (grading is per card)
+  let cid = Number(card_id);
+  if (line != null) {
+    const [c] = await sql`SELECT season, week, market, player_name, side, line FROM cards WHERE id = ${cid}`;
+    if (c && Number(c.line) !== Number(line)) {
+      const [alt] = await sql`
+        SELECT id FROM cards WHERE source = 'model' AND season = ${c.season} AND week = ${c.week} AND market = ${c.market}
+          AND player_name = ${c.player_name} AND side = ${c.side} AND line = ${Number(line)} AND created_at < kickoff_utc
+        ORDER BY created_at DESC LIMIT 1`;
+      if (!alt) {
+        const lines = await sql`SELECT DISTINCT line FROM cards WHERE source = 'model' AND season = ${c.season} AND week = ${c.week}
+          AND market = ${c.market} AND player_name = ${c.player_name} AND side = ${c.side} AND created_at < kickoff_utc ORDER BY line`;
+        return new Response(`The model never priced ${c.player_name} ${c.side} ${line}. Lines it did price: ${lines.map((l) => Number(l.line)).join(", ")}`, { status: 422 });
+      }
+      cid = Number(alt.id);
+    }
+  }
+  await sql`DELETE FROM placed_bets WHERE card_id = ${cid}`;
   const [row] = await sql`
     INSERT INTO placed_bets (card_id, stake_units, book, price_american, line, note)
-    VALUES (${Number(card_id)}, ${Number(stake_units) || 1}, ${book ?? null}, ${price_american == null ? null : Number(price_american)}, ${line == null ? null : Number(line)}, ${note ?? null})
+    VALUES (${cid}, ${Number(stake_units) || 1}, ${book ?? null}, ${price_american == null ? null : Number(price_american)}, ${line == null ? null : Number(line)}, ${note ?? null})
     RETURNING id`;
   return Response.json({ ok: true, id: row.id });
 }
