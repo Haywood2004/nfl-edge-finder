@@ -23,8 +23,12 @@ def _grade_prop(c) -> tuple[float, str, float] | None:
     stat = db.read_sql(f"""SELECT {stat_col} AS stat, {usage_col} AS usage FROM raw_weekly_stats
                            WHERE player_id=:p AND season=:s AND week=:w AND season_type='REG'""",
                        {"p": c.player_id, "s": int(c.season), "w": int(c.week)})
+    if stat.empty:   # nflverse weekly stats not published yet → same-day ESPN box score (ingest/espn_boxscores.py)
+        stat = db.read_sql(f"""SELECT {stat_col} AS stat, {usage_col} AS usage FROM raw_boxscores_espn
+                               WHERE player_id=:p AND season=:s AND week=:w AND game_id=:g""",
+                           {"p": c.player_id, "s": int(c.season), "w": int(c.week), "g": c.game_id})
     if stat.empty:
-        return None  # stats not published yet
+        return None  # no stats yet
     actual = float(stat.stat.iloc[0] or 0)
     usage = stat.usage.iloc[0]
     if pd.isna(usage) or usage == 0:
