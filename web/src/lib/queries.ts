@@ -102,7 +102,9 @@ export async function trackRecord() {
     SELECT count(*)::int AS n, sum((result='win')::int)::int AS wins, sum((result='loss')::int)::int AS losses,
            sum((result='push')::int)::int AS pushes, coalesce(sum(profit_units),0)::float AS units,
            avg(clv_prob)::float AS clv
-    FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published AND c.source = 'model'`;
+    FROM (SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side) g.*
+          FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published AND c.source = 'model'
+          ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at ASC) g`;
   return r as { n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null };
 }
 
@@ -144,8 +146,10 @@ export async function modelCards() {
 export async function trackBreakdown() {
   return sql<{ kind: string; key: string; n: number; wins: number; losses: number; pushes: number; units: number; clv: number | null }[]>`
     WITH g AS (
-      SELECT c.market, c.week, CASE WHEN c.edge >= (CASE WHEN c.market='h2h' THEN 0.15 WHEN c.market='player_pass_yds' THEN 0.08 WHEN c.market='player_reception_yds' THEN 0.10 WHEN c.market='player_receptions' THEN 0.15 ELSE 0.06 END) THEN 'flagged' ELSE 'paper' END AS tier, gr.result, gr.profit_units, gr.clv_prob
-      FROM grades gr JOIN cards c ON c.id = gr.card_id WHERE c.source = 'model')
+      SELECT x.market, x.week, CASE WHEN x.edge >= (CASE WHEN x.market='h2h' THEN 0.15 WHEN x.market='player_pass_yds' THEN 0.08 WHEN x.market='player_reception_yds' THEN 0.10 WHEN x.market='player_receptions' THEN 0.15 ELSE 0.06 END) THEN 'flagged' ELSE 'paper' END AS tier, x.result, x.profit_units, x.clv_prob
+      FROM (SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side) gr.result, gr.profit_units, gr.clv_prob, c.market, c.week, c.edge
+            FROM grades gr JOIN cards c ON c.id = gr.card_id WHERE c.source = 'model'
+            ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at ASC) x)
     SELECT 'market' AS kind, market AS key, count(*)::int n, sum((result='win')::int)::int wins, sum((result='loss')::int)::int losses,
            sum((result='push')::int)::int pushes, coalesce(sum(profit_units),0)::float units, avg(clv_prob)::float clv FROM g GROUP BY market
     UNION ALL
