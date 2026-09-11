@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, pct, signedPct } from "@/lib/format";
@@ -27,6 +27,21 @@ export function Screener({ cards }: { cards: Card[] }) {
   const [exposure, setExposure] = useState(WEEKLY_EXPOSURE_PCT * 100);
   const [sort, setSort] = useState<SortKey>("score");
   const [open, setOpen] = useState<number | null>(null);
+  // bets actually placed (logged to /api/placed; token lives in localStorage on this device only)
+  const [token, setToken] = useState("");
+  const [placed, setPlaced] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    try { setToken(localStorage.getItem("placed_token") ?? ""); } catch {}
+    fetch("/api/placed").then((r) => r.json()).then((d) => setPlaced(new Set((d.rows ?? []).map((r: { card_id: number }) => Number(r.card_id))))).catch(() => {});
+  }, []);
+  const togglePlaced = async (c: Card, stake: number) => {
+    if (!token) { alert("Enter the placed-bets token in the settings panel first."); return; }
+    const remove = placed.has(c.id);
+    const r = await fetch("/api/placed", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token, card_id: c.id, stake_units: stake, book: c.book, price_american: c.price_american, line: c.line, remove }) });
+    if (!r.ok) { alert(r.status === 401 ? "Wrong token." : "Could not log the bet."); return; }
+    setPlaced((p) => { const n = new Set(p); if (remove) n.delete(c.id); else n.add(c.id); return n; });
+  };
   // Kelly is sized off the CALIBRATED probability when available — raw model edges overstate realised edge ~3×
   const pFor = (c: Card) => (c.prob_calibrated != null ? Number(c.prob_calibrated) : Number(c.model_prob));
   const stakeFor = (p: number, dec: number) => {
@@ -92,6 +107,9 @@ export function Screener({ cards }: { cards: Card[] }) {
             </label>
             <label className="flex flex-col gap-1 text-[12px] text-muted" title="Kelly sizes each bet against the whole bankroll; with many bets in one week the sum would exceed it. Stakes are scaled down together to fit this weekly budget.">Weekly exposure (% of bankroll)
               <input type="number" className={`${sel} w-20`} value={exposure} min={5} max={200} step={5} onChange={(e) => setExposure(+e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-[12px] text-muted" title="Lets you mark rows as placed; those bets are tracked on the Track Record page at the price you took.">Placed-bets token
+              <input type="password" className={`${sel} w-28`} value={token} placeholder="optional" onChange={(e) => { setToken(e.target.value); try { localStorage.setItem("placed_token", e.target.value); } catch {} }} />
             </label>
           </div>
         </div>
@@ -159,7 +177,13 @@ export function Screener({ cards }: { cards: Card[] }) {
                     <td className={c.confidence >= confReq ? "" : "text-muted"}>{c.confidence}</td>
                     <td className="font-semibold">{isBet && stake > 0 ? `${stake.toFixed(2)}u` : <span className="text-dim">–</span>}</td>
                     <td className="whitespace-nowrap text-muted">{kickoff(c.kickoff_utc)}</td>
-                    <td><Link href={c.href ?? `/cards/${c.id}`} className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>detail</Link></td>
+                    <td className="whitespace-nowrap">
+                      {!isMl && token && (
+                        <button onClick={(e) => { e.stopPropagation(); togglePlaced(c, stake); }} title={placed.has(c.id) ? "Logged as placed — click to remove" : "Log this bet as placed"}
+                          className={`mr-2 rounded px-1.5 py-0.5 text-[11px] ${placed.has(c.id) ? "bg-up/20 text-up" : "bg-panel-2 text-muted hover:text-fg"}`}>{placed.has(c.id) ? "✓ placed" : "placed?"}</button>
+                      )}
+                      <Link href={c.href ?? `/cards/${c.id}`} className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>detail</Link>
+                    </td>
                   </tr>,
                   open === c.id && (
                     <tr key={`${c.id}-why`} className="bg-panel-2/40">
