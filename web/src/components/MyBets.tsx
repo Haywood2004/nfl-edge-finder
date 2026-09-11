@@ -19,6 +19,7 @@ export function MyBets() {
   const [cands, setCands] = useState<Cand[]>([]);
   const [q, setQ] = useState("");
   const [stakes, setStakes] = useState<Record<number, string>>({});
+  const [lines, setLines] = useState<Record<number, string>>({});
   const [prices, setPrices] = useState<Record<number, string>>({});
   const load = () => fetch("/api/placed").then((r) => r.json()).then((d) => setRows(d.rows ?? [])).catch(() => {});
   useEffect(() => {
@@ -51,12 +52,12 @@ export function MyBets() {
     const tk = token || getToken();
     if (!tk) { if (!(await login())) return false; }
     const r = await fetch("/api/placed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: tk || getToken(), ...body }) });
-    if (!r.ok) { alert(r.status === 401 ? "Wrong password — log in again." : "Could not save."); return false; }
+    if (!r.ok) { alert(r.status === 401 ? "Wrong password — log in again." : r.status === 422 ? await r.text() : "Could not save."); return false; }
     await load();
     return true;
   };
   const add = (c: Cand) => post({ card_id: c.card_id, stake_units: Number(stakes[c.card_id] ?? (c.suggested_stake || 1)) || 1, book: c.book,
-    price_american: prices[c.card_id] ? Number(prices[c.card_id]) : c.price_american, line: c.line });
+    price_american: prices[c.card_id] ? Number(prices[c.card_id]) : c.price_american, line: lines[c.card_id] ? Number(lines[c.card_id]) : c.line });
   const remove = (r: Row) => { if (confirm(`Remove ${r.player_name} ${r.side} ${r.line}?`)) post({ card_id: r.card_id, remove: true }); };
 
   const kpi = (label: string, value: string, sub?: string, tone?: "up" | "down") => (
@@ -109,10 +110,10 @@ export function MyBets() {
             <h2 className="eyebrow">Log a bet</h2>
             <input className="select w-64" placeholder="Search player / team…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <p className="mb-3 text-[12px] text-muted">Every pick the model priced in the last two weeks (≥4% edge), one row per pick. The stake defaults to the model's Kelly size (what the screener showed); change it or the price if you bet differently, then log it. Graded picks fill in immediately.</p>
+          <p className="mb-3 text-[12px] text-muted">Every pick the model priced in the last two weeks (≥4% edge), one row per pick at the line the screener showed last. The stake defaults to the model's Kelly size; change the stake, line or price if you bet differently, then log it. Graded picks fill in immediately.</p>
           <div className="overflow-x-auto">
             <table className="data text-[13px]">
-              <thead><tr><th>Pick</th><th>Best price</th><th>Kick</th><th>Result</th><th>Stake (u)</th><th>Your price</th><th></th></tr></thead>
+              <thead><tr><th>Pick</th><th>Best price</th><th>Kick</th><th>Result</th><th>Stake (u)</th><th>Your line</th><th>Your price</th><th></th></tr></thead>
               <tbody>
                 {shown.map((c) => (
                   <tr key={c.card_id}>
@@ -121,11 +122,12 @@ export function MyBets() {
                     <td className="whitespace-nowrap text-muted">{kick(c.kickoff_utc)}</td>
                     <td className={c.result === "win" ? "text-up" : c.result === "loss" ? "text-down" : "text-muted"}>{c.result ?? "pending"}{c.actual != null ? ` (${Number(c.actual).toFixed(0)})` : ""}</td>
                     <td><input type="number" step={0.05} min={0.05} className="select w-20" placeholder={c.suggested_stake ? c.suggested_stake.toFixed(2) : "1.00"} value={stakes[c.card_id] ?? ""} onChange={(e) => setStakes({ ...stakes, [c.card_id]: e.target.value })} /></td>
+                    <td><input type="number" step={0.5} className="select w-20" placeholder={String(Number(c.line))} value={lines[c.card_id] ?? ""} onChange={(e) => setLines({ ...lines, [c.card_id]: e.target.value })} /></td>
                     <td><input type="number" step={1} className="select w-20" placeholder={String(c.price_american)} value={prices[c.card_id] ?? ""} onChange={(e) => setPrices({ ...prices, [c.card_id]: e.target.value })} /></td>
                     <td><button onClick={() => add(c)} className="rounded bg-panel-2 px-2 py-0.5 text-[12px] hover:text-fg">log</button></td>
                   </tr>
                 ))}
-                {shown.length === 0 && <tr><td colSpan={7} className="py-3 text-muted">Nothing matches.</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={8} className="py-3 text-muted">Nothing matches.</td></tr>}
               </tbody>
             </table>
           </div>
