@@ -21,13 +21,13 @@ def _norm(s):
     return " ".join(s.split())
 
 
-def ingest_boxscores_espn(season: int | None = None, week: int | None = None, only_missing: bool = True) -> int:
-    """Fetch box scores for every finished game of (season, week) — default: all weeks with a game finished ≥ 3h ago
-    that has no nflverse stats yet."""
+def ingest_boxscores_espn(season: int | None = None, week: int | None = None, only_missing: bool = True, days: int = 8) -> int:
+    """Fetch box scores for finished games (kickoff ≥ 3h ago) from the last `days` days — default: only games that have
+    no nflverse weekly stats yet. Bounded to recent games so it never crawls historical seasons."""
     now = dt.datetime.now(dt.timezone.utc)
     q = """SELECT g.game_id, g.season, g.week, g.kickoff_utc, g.home_team, g.away_team, g.home_score, g.away_score
-           FROM raw_games g WHERE g.game_type='REG' AND g.kickoff_utc < :cut"""
-    p = {"cut": now - dt.timedelta(hours=3)}
+           FROM raw_games g WHERE g.game_type='REG' AND g.kickoff_utc < :cut AND g.kickoff_utc > :since"""
+    p = {"cut": now - dt.timedelta(hours=3), "since": now - dt.timedelta(days=days)}
     if season:
         q += " AND g.season=:s"; p["s"] = season
     if week:
