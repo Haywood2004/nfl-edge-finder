@@ -77,8 +77,13 @@ def main(argv=None):
     elif a.job == "score_ml":
         from .scoring.moneyline_cards import score_moneylines
         score_moneylines(a.week)
-    elif a.job == "grade":            # Tuesday morning: grade, then let the results re-fit the calibration
+    elif a.job == "grade":            # mornings after games: ESPN box scores → grade → re-fit the calibration
+        from .ingest.espn_boxscores import ingest_boxscores_espn
         from .grading.grade import grade_cards
+        try:
+            ingest_boxscores_espn()
+        except Exception as e:
+            print(f"[grade] ESPN box scores skipped: {e}")
         grade_cards()
         from .models.calibration import train as train_cal
         try:
