@@ -11,6 +11,13 @@ export default async function TrackRecord() {
     SELECT c.season, c.week, c.player_name, c.team, c.market, c.side, c.line, c.price_american, c.book, c.edge, c.confidence,
            g.actual, g.result, g.profit_units, g.clv_prob
     FROM grades g JOIN cards c ON c.id = g.card_id WHERE c.published AND c.source = 'model' ORDER BY c.kickoff_utc DESC, c.score DESC LIMIT 500`;
+  const mine = await sql`
+    SELECT p.placed_at, p.stake_units, p.book, p.price_american, p.line, c.id AS card_id, c.player_name, c.team, c.opponent, c.market, c.side, c.kickoff_utc,
+           g.result, g.actual, g.profit_units, g.clv_prob
+    FROM placed_bets p JOIN cards c ON c.id = p.card_id LEFT JOIN grades g ON g.card_id = c.id ORDER BY c.kickoff_utc DESC, p.placed_at DESC LIMIT 300`;
+  const mineUnits = mine.reduce((s, r) => s + (r.profit_units == null ? 0 : Number(r.profit_units) * Number(r.stake_units)), 0);
+  const mineStaked = mine.reduce((s, r) => s + (r.result === "win" || r.result === "loss" ? Number(r.stake_units) : 0), 0);
+  const mineW = mine.filter((r) => r.result === "win").length, mineL = mine.filter((r) => r.result === "loss").length, mineP = mine.filter((r) => r.result === "push" || r.result === "void").length;
   const wr = t.wins + t.losses ? t.wins / (t.wins + t.losses) : 0;
   const roi = t.n ? t.units / t.n : 0;
   const kpis: [string, string, string?][] = [
@@ -33,6 +40,35 @@ export default async function TrackRecord() {
           <div key={l} className="card kpi"><div className="kpi-label">{l}</div><div className="kpi-value">{v}</div>{s && <div className="kpi-sub">{s}</div>}</div>
         ))}
       </div>
+
+      {mine.length > 0 && (
+        <section className="card p-4 sm:p-5">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="eyebrow">My placed bets</h2>
+            <p className="text-sm tnum"><b>{mineW}-{mineL}{mineP ? `-${mineP}` : ""}</b> · staked {mineStaked.toFixed(2)}u · <span className={mineUnits >= 0 ? "text-up" : "text-down"}>{mineUnits >= 0 ? "+" : ""}{mineUnits.toFixed(2)}u</span>{mineStaked > 0 && <span className="text-muted"> ({signedPct(mineUnits / mineStaked)} ROI)</span>}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data text-[13px]">
+              <thead><tr><th>Bet</th><th>Price</th><th>Stake</th><th>Kick</th><th>Actual</th><th>Result</th><th>P&amp;L</th><th>CLV</th></tr></thead>
+              <tbody>
+                {mine.map((r) => (
+                  <tr key={r.card_id}>
+                    <td><span className={`pill ${r.side === "Over" ? "pill-up" : "pill-down"}`}>{r.side === "Over" ? "O" : "U"} {Number(r.line)}</span> <span className="font-medium">{r.player_name}</span> <span className="text-muted">{MARKET_NAMES[r.market] ?? r.market} · {r.team} vs {r.opponent}</span></td>
+                    <td className="whitespace-nowrap">{american(r.price_american)} <span className="text-muted">{book(r.book)}</span></td>
+                    <td>{Number(r.stake_units).toFixed(2)}u</td>
+                    <td className="whitespace-nowrap text-muted">{new Date(r.kickoff_utc).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" })}</td>
+                    <td>{r.actual == null ? <span className="text-dim">pending</span> : num(Number(r.actual), 0)}</td>
+                    <td className={r.result === "win" ? "text-up" : r.result === "loss" ? "text-down" : "text-muted"}>{r.result ?? "–"}</td>
+                    <td className={r.profit_units == null ? "text-dim" : Number(r.profit_units) >= 0 ? "text-up" : "text-down"}>{r.profit_units == null ? "–" : `${Number(r.profit_units) * Number(r.stake_units) >= 0 ? "+" : ""}${(Number(r.profit_units) * Number(r.stake_units)).toFixed(2)}u`}</td>
+                    <td className="text-muted">{r.clv_prob == null ? "–" : signedPct(Number(r.clv_prob))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-[12px] text-muted">Bets you marked as placed in the screener, at the price and stake you took. The pipeline&apos;s own paper record above is systematic and separate.</p>
+        </section>
+      )}
 
       {br.length > 0 && (
         <div className="grid gap-3 md:grid-cols-3">
