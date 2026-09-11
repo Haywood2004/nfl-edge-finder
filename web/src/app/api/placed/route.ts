@@ -1,4 +1,6 @@
 import { sql } from "@/lib/db";
+import { kellyStake, exposureScale } from "@/lib/kelly";
+import { barFor } from "@/lib/thresholds";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +16,29 @@ export async function GET(req: Request) {
     // picks you could log: one row per (week, market, player, side, LINE) — the last version published before kickoff —
     // for the last 14 days. The line is part of the key because a card is graded at its own line, so the row you log
     // must be the line you actually bet (post-kickoff re-scores are excluded).
-    const rows = await sql`
+    const raw = await sql`
       SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side, c.line)
              c.id AS card_id, c.season, c.week, c.player_name, c.team, c.opponent, c.market, c.side, c.line, c.book, c.price_american,
+             c.price_decimal, c.model_prob, c.prob_calibrated, c.confidence, c.created_at,
              c.kickoff_utc, c.edge, c.edge_calibrated, g.result, g.actual
       FROM cards c LEFT JOIN grades g ON g.card_id = c.id
       WHERE c.source = 'model' AND c.market <> 'h2h' AND c.kickoff_utc > now() - interval '14 days' AND c.edge >= 0.04
         AND c.created_at < c.kickoff_utc
       ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.line, c.created_at DESC`;
+    // suggested stake = what the screener shows: ¼-Kelly on the calibrated prob, then the week's exposure scaling over
+    // the bets that clear the bar (latest pre-kick version per pick) — lib/kelly.ts defaults
+    const stakeRaw = (r: (typeof raw)[number]) => kellyStake(r.prob_calibrated != null ? Number(r.prob_calibrated) : Number(r.model_prob), Number(r.price_decimal));
+    const clears = (r: (typeof raw)[number]) => Number(r.edge) >= barFor(r.market) && Number(r.confidence) >= 55;
+    const scale: Record<string, number> = {};
+    for (const wk of new Set(raw.map((r) => `${r.season}-${r.week}`))) {
+      const latest = new Map<string, (typeof raw)[number]>();   // one version per pick, like the screener's card list
+      for (const r of raw.filter((r) => `${r.season}-${r.week}` === wk && clears(r))) {
+        const k = `${r.market}|${r.player_name}|${r.side}`;
+        if (!latest.has(k) || new Date(r.created_at) > new Date(latest.get(k)!.created_at)) latest.set(k, r);
+      }
+      scale[wk] = exposureScale([...latest.values()].map(stakeRaw));
+    }
+    const rows = raw.map((r) => ({ ...r, suggested_stake: clears(r) ? Math.round(stakeRaw(r) * scale[`${r.season}-${r.week}`] * 20) / 20 : 0 }));
     return Response.json({ rows });
   }
   const rows = await sql`
