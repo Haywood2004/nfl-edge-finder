@@ -2,7 +2,7 @@ import { sql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-/** Log of bets actually placed. Writes need PLACED_BETS_TOKEN (set in Vercel env; entered once in the screener settings). */
+/** Log of bets actually placed. Writes need PLACED_BETS_TOKEN (Vercel env) — the password typed once into the screener's "log my bets" prompt. */
 export async function GET(req: Request) {
   // ?check=1 with the password in the X-Placed-Token header → 204 if it matches (used by the unlock prompt)
   const url = new URL(req.url);
