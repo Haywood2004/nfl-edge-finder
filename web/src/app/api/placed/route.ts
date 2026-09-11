@@ -3,7 +3,13 @@ import { sql } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 /** Log of bets actually placed. Writes need PLACED_BETS_TOKEN (set in Vercel env; entered once in the screener settings). */
-export async function GET() {
+export async function GET(req: Request) {
+  // ?check=1 with the password in the X-Placed-Token header → 204 if it matches (used by the unlock prompt)
+  const url = new URL(req.url);
+  if (url.searchParams.get("check")) {
+    const token = process.env.PLACED_BETS_TOKEN;
+    return new Response(null, { status: token && req.headers.get("x-placed-token") === token ? 204 : 401 });
+  }
   const rows = await sql`
     SELECT p.id, p.placed_at, p.stake_units, p.book, p.price_american, p.line, p.note, c.id AS card_id, c.player_name, c.market, c.side,
            c.team, c.opponent, c.kickoff_utc, c.edge, c.edge_calibrated, g.result, g.actual, g.profit_units, g.clv_prob
