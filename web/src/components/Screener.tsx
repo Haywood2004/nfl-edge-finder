@@ -34,8 +34,17 @@ export function Screener({ cards }: { cards: Card[] }) {
     try { setToken(localStorage.getItem("placed_token") ?? ""); } catch {}
     fetch("/api/placed").then((r) => r.json()).then((d) => setPlaced(new Set((d.rows ?? []).map((r: { card_id: number }) => Number(r.card_id))))).catch(() => {});
   }, []);
+  const unlock = async () => {
+    const pw = window.prompt("Password to log placed bets:");
+    if (!pw) return;
+    const r = await fetch("/api/placed?check=1", { headers: { "x-placed-token": pw } });
+    if (r.status !== 204) { alert("Wrong password."); return; }
+    setToken(pw);
+    try { localStorage.setItem("placed_token", pw); } catch {}
+  };
+  const lock = () => { setToken(""); try { localStorage.removeItem("placed_token"); } catch {} };
   const togglePlaced = async (c: Card, stake: number) => {
-    if (!token) { alert("Enter the placed-bets token in the settings panel first."); return; }
+    if (!token) { await unlock(); return; }
     const remove = placed.has(c.id);
     const r = await fetch("/api/placed", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ token, card_id: c.id, stake_units: stake, book: c.book, price_american: c.price_american, line: c.line, remove }) });
@@ -108,9 +117,7 @@ export function Screener({ cards }: { cards: Card[] }) {
             <label className="flex flex-col gap-1 text-[12px] text-muted" title="Kelly sizes each bet against the whole bankroll; with many bets in one week the sum would exceed it. Stakes are scaled down together to fit this weekly budget.">Weekly exposure (% of bankroll)
               <input type="number" className={`${sel} w-20`} value={exposure} min={5} max={200} step={5} onChange={(e) => setExposure(+e.target.value)} />
             </label>
-            <label className="flex flex-col gap-1 text-[12px] text-muted" title="Lets you mark rows as placed; those bets are tracked on the Track Record page at the price you took.">Placed-bets token
-              <input type="password" className={`${sel} w-28`} value={token} placeholder="optional" onChange={(e) => { setToken(e.target.value); try { localStorage.setItem("placed_token", e.target.value); } catch {} }} />
-            </label>
+
           </div>
         </div>
         <div className="grid w-full grid-cols-3 gap-2 text-center sm:ml-auto sm:w-auto">
@@ -139,7 +146,11 @@ export function Screener({ cards }: { cards: Card[] }) {
             <label className="flex items-center gap-1 text-muted">Min conf <input type="number" className={`${sel} w-16`} value={minConf} min={0} max={100} onChange={(e) => setMinConf(+e.target.value)} /></label>
           </>
         )}
-        <select className={`${sel} ml-auto`} value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+        <button onClick={token ? lock : unlock} className={`ml-auto rounded-md px-2.5 py-1.5 text-[12px] ${token ? "bg-up/15 text-up" : "text-muted hover:text-fg"}`}
+          title={token ? "Placed-bet logging is unlocked on this device — click to lock" : "Enter the password to log the bets you place"}>
+          {token ? "● bet logging on" : "○ log my bets"}
+        </button>
+        <select className={sel} value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
           <option value="score">Sort: edge × confidence</option>
           <option value="stake">Sort: stake</option>
           <option value="edge">Sort: edge</option>
