@@ -5,6 +5,7 @@ import type { Card } from "@/lib/queries";
 import { american, book, kickoff, MARKET_NAMES, pct, signedPct } from "@/lib/format";
 import { barFor, MIN_CONF, BARS_TEXT } from "@/lib/thresholds";
 import { kellyFull, DEFAULT_BANKROLL, DEFAULT_FRACTION, MAX_STAKE_PCT, WEEKLY_EXPOSURE_PCT, exposureScale } from "@/lib/kelly";
+import { getToken, login } from "@/lib/auth";
 
 const FRACTIONS = [[1, "Full Kelly"], [0.5, "Half Kelly"], [0.25, "Quarter Kelly (default)"], [0.125, "Eighth Kelly"]] as const;
 
@@ -31,23 +32,18 @@ export function Screener({ cards }: { cards: Card[] }) {
   const [token, setToken] = useState("");
   const [placed, setPlaced] = useState<Set<number>>(new Set());
   useEffect(() => {
-    try { setToken(localStorage.getItem("placed_token") ?? ""); } catch {}
+    setToken(getToken());
+    const h = (e: Event) => setToken(String((e as CustomEvent).detail ?? ""));
+    window.addEventListener("placed-token", h);
     fetch("/api/placed").then((r) => r.json()).then((d) => setPlaced(new Set((d.rows ?? []).map((r: { card_id: number }) => Number(r.card_id))))).catch(() => {});
+    return () => window.removeEventListener("placed-token", h);
   }, []);
-  const unlock = async () => {
-    const pw = window.prompt("Password to log placed bets:");
-    if (!pw) return;
-    const r = await fetch("/api/placed?check=1", { headers: { "x-placed-token": pw } });
-    if (r.status !== 204) { alert("Wrong password."); return; }
-    setToken(pw);
-    try { localStorage.setItem("placed_token", pw); } catch {}
-  };
-  const lock = () => { setToken(""); try { localStorage.removeItem("placed_token"); } catch {} };
   const togglePlaced = async (c: Card, stake: number) => {
-    if (!token) { await unlock(); return; }
+    if (!token) { if (!(await login())) return; }
     const remove = placed.has(c.id);
+    const tk = token || getToken();
     const r = await fetch("/api/placed", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token, card_id: c.id, stake_units: stake, book: c.book, price_american: c.price_american, line: c.line, remove }) });
+      body: JSON.stringify({ token: tk, card_id: c.id, stake_units: stake || 1, book: c.book, price_american: c.price_american, line: c.line, remove }) });
     if (!r.ok) { alert(r.status === 401 ? "Wrong token." : "Could not log the bet."); return; }
     setPlaced((p) => { const n = new Set(p); if (remove) n.delete(c.id); else n.add(c.id); return n; });
   };
@@ -146,11 +142,7 @@ export function Screener({ cards }: { cards: Card[] }) {
             <label className="flex items-center gap-1 text-muted">Min conf <input type="number" className={`${sel} w-16`} value={minConf} min={0} max={100} onChange={(e) => setMinConf(+e.target.value)} /></label>
           </>
         )}
-        <button onClick={token ? lock : unlock} className={`ml-auto rounded-md px-2.5 py-1.5 text-[12px] ${token ? "bg-up/15 text-up" : "text-muted hover:text-fg"}`}
-          title={token ? "Placed-bet logging is unlocked on this device — click to lock" : "Enter the password to log the bets you place"}>
-          {token ? "● bet logging on" : "○ log my bets"}
-        </button>
-        <select className={sel} value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+        <select className={`${sel} ml-auto`} value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
           <option value="score">Sort: edge × confidence</option>
           <option value="stake">Sort: stake</option>
           <option value="edge">Sort: edge</option>
