@@ -11,14 +11,17 @@ export async function GET(req: Request) {
     return new Response(null, { status: token && req.headers.get("x-placed-token") === token ? 204 : 401 });
   }
   if (url.searchParams.get("candidates")) {
-    // picks you could log: one row per (week, market, player, side) — the last published version — for the last 14 days
+    // picks you could log: one row per (week, market, player, side, LINE) — the last version published before kickoff —
+    // for the last 14 days. The line is part of the key because a card is graded at its own line, so the row you log
+    // must be the line you actually bet (post-kickoff re-scores are excluded).
     const rows = await sql`
-      SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side)
+      SELECT DISTINCT ON (c.season, c.week, c.market, c.player_name, c.side, c.line)
              c.id AS card_id, c.season, c.week, c.player_name, c.team, c.opponent, c.market, c.side, c.line, c.book, c.price_american,
              c.kickoff_utc, c.edge, c.edge_calibrated, g.result, g.actual
       FROM cards c LEFT JOIN grades g ON g.card_id = c.id
       WHERE c.source = 'model' AND c.market <> 'h2h' AND c.kickoff_utc > now() - interval '14 days' AND c.edge >= 0.04
-      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.created_at DESC`;
+        AND c.created_at < c.kickoff_utc
+      ORDER BY c.season, c.week, c.market, c.player_name, c.side, c.line, c.created_at DESC`;
     return Response.json({ rows });
   }
   const rows = await sql`
