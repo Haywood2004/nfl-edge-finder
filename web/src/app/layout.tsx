@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { Nav, Logo } from "@/components/Nav";
 import { StatusPill } from "@/components/Freshness";
+import { LoginButton } from "@/components/LoginButton";
 
 export const metadata: Metadata = {
   title: { default: "Edge Finder — matchup-aware NFL betting edges", template: "%s · Edge Finder" },
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5 sm:gap-6">
             <Logo />
             <div className="hidden sm:block"><Nav /></div>
-            <div className="ml-auto"><StatusPill /></div>
+            <div className="ml-auto flex items-center gap-2"><StatusPill /><LoginButton /></div>
           </div>
           <div className="border-t border-border/60 px-2 py-1 sm:hidden"><Nav /></div>
         </header>
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <li><Link href="/backtest" className="hover:text-fg">Backtest</Link></li>
                 <li><Link href="/kelly" className="hover:text-fg">Kelly sizing</Link></li>
                 <li><Link href="/track-record" className="hover:text-fg">Track record</Link></li>
+                <li><Link href="/model-record" className="hover:text-fg">Model paper record</Link></li>
                 <li><Link href="/how" className="hover:text-fg">Methodology &amp; model card</Link></li>
               </ul>
             </div>
