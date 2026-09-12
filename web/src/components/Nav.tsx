@@ -4,6 +4,8 @@ import { usePathname } from "next/navigation";
 
 const nav = [
   { href: "/", label: "Screener" },
+  { href: "/games", label: "Games" },
+  { href: "/cfb", label: "CFB" },
   { href: "/rankings/defense", label: "Defense" },
   { href: "/backtest", label: "Backtest" },
   { href: "/track-record", label: "Track Record" },
