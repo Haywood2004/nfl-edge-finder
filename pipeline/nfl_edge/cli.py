@@ -60,7 +60,12 @@ def main(argv=None):
         ingest.ingest_odds(a.label, tuple(a.markets), week=a.week, from_dir=a.from_dir, max_events=a.max_events)
         from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
+        from .scoring.spread_cards import score_spreads
         score_week(a.week); score_moneylines(a.week)
+        try:
+            score_spreads(a.week)
+        except Exception as e:
+            print(f"[snapshot] spreads skipped: {e}")
     elif a.job == "build_features":
         from .features.build import build_features
         build_features(a.seasons, a.week)
@@ -70,13 +75,27 @@ def main(argv=None):
     elif a.job == "score":
         from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
+        from .scoring.spread_cards import score_spreads
         score_week(a.week); score_moneylines(a.week)
+        try:
+            score_spreads(a.week)
+        except Exception as e:
+            print(f"[score] spreads skipped: {e}")
     elif a.job == "train_ml":
         from .models.moneyline import train
         train()
     elif a.job == "score_ml":
         from .scoring.moneyline_cards import score_moneylines
         score_moneylines(a.week)
+    elif a.job == "train_spread":
+        from .models.spread import train
+        train()
+    elif a.job == "score_spreads":
+        from .scoring.spread_cards import score_spreads
+        score_spreads(a.week)
+    elif a.job == "sasser_cfb":       # scrape davidsasser.com/cfb picks (append-only) and grade finished ones via ESPN
+        from .ingest.sasser_cfb import ingest_sasser_cfb, grade_sasser_cfb
+        ingest_sasser_cfb(); grade_sasser_cfb()
     elif a.job == "grade":            # mornings after games: ESPN box scores → grade → re-fit the calibration
         from .ingest.espn_boxscores import ingest_boxscores_espn
         from .grading.grade import grade_cards
@@ -85,6 +104,11 @@ def main(argv=None):
         except Exception as e:
             print(f"[grade] ESPN box scores skipped: {e}")
         grade_cards()
+        try:
+            from .ingest.sasser_cfb import grade_sasser_cfb
+            grade_sasser_cfb()
+        except Exception as e:
+            print(f"[grade] CFB external picks skipped: {e}")
         from .models.calibration import train as train_cal
         try:
             train_cal()
@@ -106,19 +130,26 @@ def main(argv=None):
         from .models.moneyline import train as train_ml
         from .models.passing_yards import train as train_py
         from .models.player_props import train as train_prop, SPECS
-        build_features(); train_ml(); train_py()
+        from .models.spread import train as train_spread
+        from .scoring.spread_cards import score_spreads
+        build_features(); train_ml(); train_spread(); train_py()
         for m in SPECS:
             train_prop(m)
         from .models.calibration import train as train_cal
         train_cal()
-        score_week(); score_moneylines()
+        score_week(); score_moneylines(); score_spreads()
     elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
         ingest.ingest_injuries(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_weather()
         ingest.ingest_odds("sun_am", tuple(a.markets))
         from .features.build import build_features
         from .scoring.cards import score_all as score_week
         from .scoring.moneyline_cards import score_moneylines
+        from .scoring.spread_cards import score_spreads
         build_features(); score_week(); score_moneylines()
+        try:
+            score_spreads()
+        except Exception as e:
+            print(f"[gameday] spreads skipped: {e}")
     elif a.job == "bootstrap":    # first run from scratch
         ingest.ingest_schedule(list(range(2009, _cur() + 1))); ingest.ingest_pbp(); ingest.ingest_weekly_stats()
         ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
