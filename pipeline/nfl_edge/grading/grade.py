@@ -53,6 +53,20 @@ def _grade_moneyline(c) -> tuple[float, str, float] | None:
     return margin, ("win" if won else "loss"), (float(c.price_decimal) - 1 if won else -1.0)
 
 
+def _grade_spread(c) -> tuple[float, str, float] | None:
+    """Spread card: side = team abbr, line = that team's handicap. Covers when margin + line > 0."""
+    g = db.read_sql("SELECT home_team, away_team, home_score, away_score FROM raw_games WHERE game_id=:g", {"g": c.game_id})
+    if g.empty or pd.isna(g.home_score.iloc[0]) or pd.isna(g.away_score.iloc[0]):
+        return None
+    hs, as_ = int(g.home_score.iloc[0]), int(g.away_score.iloc[0])
+    margin = float(hs - as_) if c.team == g.home_team.iloc[0] else float(as_ - hs)
+    adj = margin + float(c.line)
+    if adj == 0:
+        return margin, "push", 0.0
+    won = adj > 0
+    return margin, ("win" if won else "loss"), (float(c.price_decimal) - 1 if won else -1.0)
+
+
 def grade_cards() -> int:
     cards = db.read_sql("""SELECT c.* FROM cards c LEFT JOIN grades g ON g.card_id=c.id
                            WHERE g.id IS NULL AND c.kickoff_utc < now() - interval '4 hours'""")
@@ -66,6 +80,8 @@ def grade_cards() -> int:
                 res = _grade_prop(c)
             elif c.market == "h2h":
                 res = _grade_moneyline(c)
+            elif c.market == "spreads":
+                res = _grade_spread(c)
             else:
                 skipped[c.market] = skipped.get(c.market, 0) + 1
                 continue
