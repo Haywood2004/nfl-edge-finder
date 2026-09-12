@@ -15,6 +15,7 @@ dependencies = [
   "scikit-learn",
   "scipy",
   "statsmodels",
+  "beautifulsoup4",
 ]
 [project.optional-dependencies]
 dev = ["pytest"]
