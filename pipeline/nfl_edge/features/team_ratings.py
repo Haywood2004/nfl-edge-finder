@@ -101,8 +101,8 @@ def game_features(seasons: list[int]) -> pd.DataFrame:
         "div_game": g.div_game.fillna(0), "neutral": (g.location == "Neutral").astype(int),
         "home_qb_change": g.home_qb_change, "away_qb_change": g.away_qb_change,
         "home_qb_starts": g.home_qb_starts, "away_qb_starts": g.away_qb_starts,
-        "week_num": g.week,
-        "spread_line": g.spread_line, "home_ml": g.home_moneyline, "away_ml": g.away_moneyline,
+        "week_num": g.week, "home_games": g.home_games, "away_games": g.away_games,
+        "spread_line": g.spread_line, "total_line": g.total_line, "home_ml": g.home_moneyline, "away_ml": g.away_moneyline,
         "home_score": g.home_score, "away_score": g.away_score,
     })
     f["home_win"] = np.where(f.home_score.isna(), np.nan, (f.home_score > f.away_score).astype(float))
