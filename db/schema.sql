@@ -493,6 +493,72 @@ CREATE TABLE IF NOT EXISTS game_projections (
 );
 CREATE INDEX IF NOT EXISTS game_projections_sw ON game_projections(season, week);
 
+-- Spread/total projections per game (append-only per scoring run) — the /games page in the Sasser layout
+CREATE TABLE IF NOT EXISTS spread_projections (
+  id                 bigserial PRIMARY KEY,
+  model_run_id       bigint REFERENCES model_runs(id),
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  season             int NOT NULL,
+  week               int NOT NULL,
+  game_id            text NOT NULL,
+  snapshot_id        bigint REFERENCES odds_snapshots(id),
+  open_snapshot_id   bigint REFERENCES odds_snapshots(id),
+  home_team          text NOT NULL,
+  away_team          text NOT NULL,
+  kickoff_utc        timestamptz,
+  home_record        text, away_record text,
+  proj_margin_raw    numeric NOT NULL,     -- ratings model alone, home perspective
+  proj_margin        numeric NOT NULL,     -- blended toward the market (anchor weight in MODEL.md)
+  proj_total_raw     numeric, proj_total numeric,
+  proj_home_score    numeric, proj_away_score numeric,
+  open_spread        numeric,              -- home handicap, median of bettable books, week's first snapshot
+  current_spread     numeric,              -- same, latest snapshot
+  sharp_spread       numeric,              -- Pinnacle home handicap when present
+  current_total      numeric,
+  gap_raw            numeric, gap numeric, -- projection − market expected home margin
+  pick_side          text, pick_line numeric, pick_book text, pick_price_american int,
+  pick_p_cover       numeric, pick_edge numeric,
+  lean_plus          boolean NOT NULL DEFAULT false,
+  factors            jsonb NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS spread_projections_sw ON spread_projections(season, week);
+
+-- Picks scraped from an external source (davidsasser.com/cfb) — append-only snapshots, graded like our own
+CREATE TABLE IF NOT EXISTS external_picks (
+  id               bigserial PRIMARY KEY,
+  source           text NOT NULL,           -- 'sasser_cfb'
+  fetched_at       timestamptz NOT NULL DEFAULT now(),
+  season           int NOT NULL,
+  week             int,
+  sport            text NOT NULL,           -- 'cfb' | 'nfl'
+  game_date        date,
+  kickoff_text     text,
+  home_team        text NOT NULL,
+  away_team        text NOT NULL,
+  home_record      text, away_record text,
+  proj_home_score  numeric, proj_away_score numeric,
+  open_line        text, current_line text, proj_line text,
+  pick_team        text,                    -- team name as shown
+  pick_line        numeric,                 -- handicap from the picked team's perspective
+  pick_text        text NOT NULL,
+  pick_is_home     boolean,
+  espn_id          text,                    -- from the article id on his page; grading key
+  UNIQUE (source, season, game_date, home_team, away_team, pick_text)
+);
+CREATE INDEX IF NOT EXISTS external_picks_sw ON external_picks(source, season, week);
+ALTER TABLE external_picks ADD COLUMN IF NOT EXISTS espn_id text;
+
+CREATE TABLE IF NOT EXISTS external_grades (
+  id             bigserial PRIMARY KEY,
+  pick_id        bigint NOT NULL REFERENCES external_picks(id),
+  graded_at      timestamptz NOT NULL DEFAULT now(),
+  home_score     int, away_score int,
+  result         text NOT NULL,             -- win | loss | push
+  profit_units   numeric NOT NULL,          -- at −110
+  espn_id        text,
+  UNIQUE (pick_id)
+);
+
 -- Closing-line backtest bets (derived; rebuilt whole by `export_backtest`). Feeds the web Backtest lab.
 CREATE TABLE IF NOT EXISTS backtest_bets (
   id BIGSERIAL PRIMARY KEY,
