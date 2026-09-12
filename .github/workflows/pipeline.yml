@@ -27,6 +27,7 @@ on:
     - cron: "0 14,16,18,20,22,0 * * 0"  # Sun game-day poll every 2h
     - cron: "0 11 * * 2"      # Tue morning: grade last week
     - cron: "0 10 * * 1,5"    # Fri + Mon mornings: grade Thu/Sun games from ESPN box scores
+    - cron: "0 15 * * 3,5,6,0"  # CFB: scrape davidsasser.com/cfb picks (Wed/Fri/Sat before kickoffs) + grade finished games (Sat/Sun)
 
 permissions:
   contents: write      # odds_history commits parquet fixtures back to the repo
@@ -56,6 +57,7 @@ jobs:
             "0 18 * * 2")  echo "job=weekly"               >> $GITHUB_OUTPUT ;;  # ingest all + features + train? no: score
             "0 11 * * 2")  echo "job=grade"                >> $GITHUB_OUTPUT ;;
             "0 10 * * 1,5") echo "job=grade"               >> $GITHUB_OUTPUT ;;
+            "0 15 * * 3,5,6,0") echo "job=sasser_cfb"      >> $GITHUB_OUTPUT ;;
             "0 13 * * 0")  echo "job=gameday_am"           >> $GITHUB_OUTPUT ;;
             "0 14,16,18,20,22,0 * * 0") echo "job=snapshot --label gameday_poll" >> $GITHUB_OUTPUT ;;
             "0 18 * * 4")  echo "job=snapshot --label thu"       >> $GITHUB_OUTPUT ;;
