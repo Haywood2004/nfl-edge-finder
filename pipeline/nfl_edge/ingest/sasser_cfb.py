@@ -20,11 +20,10 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 from .. import db
-from ..sources.espn import _HDR
+from ..sources.espn import _HDR, HOSTS
 
 URL = "https://www.davidsasser.com/cfb"
 SOURCE = "sasser_cfb"
-ESPN_CFB = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary"
 MONTHS = {m: i for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"], 1)}
 
 
@@ -103,11 +102,21 @@ def ingest_sasser_cfb(html: str | None = None) -> int:
 
 
 def fetch_cfb_final(espn_id: str) -> dict | None:
-    """→ {'state', 'home', 'away', 'home_score', 'away_score'} from the ESPN college football summary."""
-    try:
-        j = requests.get(ESPN_CFB, params={"event": espn_id}, headers=_HDR, timeout=20).json()
-    except Exception as e:
-        print(f"[sasser] espn {espn_id}: {e}"); return None
+    """→ {'state', 'home', 'away', 'home_score', 'away_score'} from the ESPN college football summary.
+    Same host fallback as the NFL grader: datacenter IPs get HTML/403 from site.api.espn.com."""
+    j, errors = None, []
+    for base in HOSTS:
+        if "cdn.espn.com" in base:
+            continue
+        try:
+            r = requests.get(f"{base.replace('/nfl', '/college-football')}/summary", params={"event": espn_id}, headers=_HDR, timeout=20)
+            r.raise_for_status()
+            j = r.json()
+            break
+        except Exception as e:
+            errors.append(f"{base.split('/')[2]}: {e}")
+    if j is None:
+        print(f"[sasser] espn {espn_id}: " + " | ".join(errors)); return None
     comp = ((j.get("header") or {}).get("competitions") or [{}])[0]
     st = ((comp.get("status") or {}).get("type") or {}).get("state")
     t = {}
@@ -126,10 +135,11 @@ def grade_pick(pick_line: float, is_home: bool, home_score: int, away_score: int
 
 
 def grade_sasser_cfb() -> int:
-    """Grade every ungraded pick whose game date has passed, at −110 (his site shows no price)."""
+    """Grade every ungraded pick whose game date has passed (before today, US time), at −110 (his site shows no price)."""
+    today_ct = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=5)).date()
     picks = db.read_sql("""SELECT p.* FROM external_picks p LEFT JOIN external_grades g ON g.pick_id = p.id
-                           WHERE g.id IS NULL AND p.source = :s AND p.game_date <= :d AND p.pick_line IS NOT NULL AND p.pick_is_home IS NOT NULL
-                           ORDER BY p.game_date""", {"s": SOURCE, "d": dt.date.today()})
+                           WHERE g.id IS NULL AND p.source = :s AND p.game_date < :d AND p.pick_line IS NOT NULL AND p.pick_is_home IS NOT NULL
+                           ORDER BY p.game_date""", {"s": SOURCE, "d": today_ct})
     if picks.empty:
         print("[sasser] nothing to grade"); return 0
     rows, finals = [], {}
