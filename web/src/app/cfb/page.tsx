@@ -31,8 +31,11 @@ export default async function CFB({ searchParams }: { searchParams: Promise<{ we
     SELECT * FROM v WHERE rn = 1 ORDER BY game_date, kickoff_text, home_team`;
   const rec = await record(cur.season);
 
+  const mins = (t: string | null) => { const m = t?.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 1e9; return ((Number(m[1]) % 12) + (m[3].toUpperCase() === "PM" ? 12 : 0)) * 60 + Number(m[2]); };
   const byDay = new Map<string, Row[]>();
-  for (const r of rows) { const d = day(r.game_date); byDay.set(d, [...(byDay.get(d) ?? []), r]); }
+  for (const r of [...rows].sort((a, b) => a.game_date.localeCompare(b.game_date) || mins(a.kickoff_text) - mins(b.kickoff_text) || a.home_team.localeCompare(b.home_team))) {
+    const d = day(r.game_date); byDay.set(d, [...(byDay.get(d) ?? []), r]);
+  }
   const fetched = rows.length ? new Date(Math.max(...rows.map((r) => +new Date(r.fetched_at)))) : null;
 
   return (
