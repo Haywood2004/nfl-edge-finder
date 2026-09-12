@@ -69,3 +69,10 @@ Filed by the live-bot agent (`docs/AGENT_LIVE_BOT.md`); these are pipeline/web c
 
 ## Live bot — weekly paper report
 Week 1 (kicks 2026-09-10): pending. Format: alerts · sent / not_sent / suppressed · W-L-P · units · mean CLV · %CLV>0 · credits.
+
+## Games / CFB (2026-09-12)
+- [ ] After `weekly` runs Tuesday: confirm `/games` shows Week 2 with open vs current lines (open = first snapshot of the week).
+- [ ] `/cfb`: verify Saturday's scrape catches the full 49-game board and Sunday's grade fills results (ESPN summary `header.competitions[0]`).
+- [ ] Sasser's board changes picks during the week (line moves): we count the first version; consider also showing "latest-version" record.
+- [ ] Spread cards are unpublished leans; revisit after 8 graded weeks — flag only if the live ≥5-pt bucket holds ≥54%.
+- Demo: /games (NFL, Sasser layout, every game picked, graded live), /cfb (his picks, our grading).

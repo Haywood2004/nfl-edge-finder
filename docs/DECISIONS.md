@@ -174,3 +174,50 @@ New bars: passing 8%, receiving yards 10%, receptions 15%, rushing 6%. Passing i
 (three-season ROI ≈ 0, 2025 clearly negative) and should be watched; if the live record at DK/FD stays negative through
 Week 6 it should be demoted to "priced, not bet". The calibrator retrains on the DK/FD-only backtest, so expected EV on
 the screener will drop to match. Pinnacle has no odds history in the fixtures, so the backtest is DK/FD only.
+
+## 38. Grade the morning after from ESPN box scores; log bets actually placed (2026-09-11)
+
+Grading waited for nflverse's weekly stats (Tuesday, and for a new season only after Week 1), so Thursday's bets
+showed as ungraded for days. `ingest/espn_boxscores.py` pulls finished games' box scores from ESPN into
+`raw_boxscores_espn` (upsert; final scores fill `raw_games` when missing) and the grader falls back to it when
+`raw_weekly_stats` has no row. `grade` now runs Fri and Mon 10:00 UTC as well as Tuesday. nflverse remains the
+source of truth once it lands (it is checked first).
+
+Separately, the paper log (`bets.csv`) locks each pick at its FIRST appearance ≥4% edge, which is the right rule for
+a systematic record but is not "what Haywood bet": lines and books drift before kickoff. `placed_bets` records the
+bets actually placed (card, stake, book, price) via a "placed?" button on screener rows, gated by
+`PLACED_BETS_TOKEN` (Vercel env; entered once in the screener, kept in localStorage). Track Record shows them as
+"My placed bets", graded through the same `grades` rows. Two ledgers, clearly labelled.
+
+## 39. Track record = bets actually logged; model paper record moves to /model-record (2026-09-11)
+
+The old /track-record listed every scored *version* of every card (a pick re-scored at five snapshots showed five
+times), so a Thursday with three real bets looked like a 20-row disaster. Split: `/track-record` is now only the
+`placed_bets` ledger (record, win rate, units, ROI, avg CLV, one row per bet at the stake/price entered); the model's
+systematic paper record lives at `/model-record`, deduplicated to the first published version of each
+(season, week, market, player, side) — the same locking rule as `/api/bets.csv`. Logging is password-gated in the
+site header ("Log in", top right; token kept in localStorage so it persists), the site stays public read-only.
+The "Log a bet" list keys candidates by (week, market, player, side, **line**) and only shows versions published
+before kickoff, because a card is graded at its own line — logging the wrong line would grade the wrong bet.
+
+## 40. Games page (spreads) in the Sasser layout; CFB tab tracks his picks instead of trusting them (2026-09-12)
+
+Haywood asked for David Sasser's CFB board (davidsasser.com/cfb) rebuilt for the NFL, and a CFB tab. What his board
+is: a margin model submitted to the CFBD Model Pick'em contest (his profile: 1,851 games all-time, 956-850-45 ATS =
+52.9%, MAE 12.55 — market level; break-even at −110 is 52.4%), played against the current line in every game. The
+31-18-2 he tweets is Week 0–1, when lines are priors and every rating model looks smart. No methodology is published.
+
+NFL version (`models/spread.py`, `scoring/spread_cards.py`, `/games`): ridge on the moneyline model's features
+predicting the home margin and the total, walk-forward 2019–2025 against nflverse closing spreads. Result: the raw
+model's MAE is 10.22 vs the market's 9.83; picking every game goes 881-947-43 ATS (48.2%, −7.8% ROI); only the
+≥5-pt-disagreement bucket is positive (76-62, +5% ROI, n=139, and 6-13 in 2025) — noise. So the page shows every
+game the way his does (projected scores, open, current, projected line, pick, P(cover)) and grades every pick
+(cards with market='spreads', `published=false`), but nothing is staked. The projection is shifted by the median
+walk-forward residual (least squares centres the mean; covering is about the median), and P(cover) uses the
+empirical residual CDF, not a normal — NFL margins pile up on 3 and 7.
+
+CFB (`ingest/sasser_cfb.py`, `/cfb`): scrape his board (server-rendered; each game's `<article aria-labelledby>`
+carries the ESPN event id, which is what makes free grading possible), store every pick as seen (append-only, a
+changed pick is a new row, the record counts the first), grade at −110 from the ESPN college summary, show his
+record as WE measure it. No CFBD API key needed. If four weeks of our grading show him at ≥55% we can talk about
+a CFB model of our own; at his contest rate (52.9%) the honest expectation is roughly break-even.

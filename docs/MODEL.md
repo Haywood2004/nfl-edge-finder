@@ -197,3 +197,79 @@ Closing lines (kickoff − 60 min) from The Odds API historical endpoints, every
 | 0.0 | -0.006 (930) | +0.007 (805) | +0.012 (656) | -0.003 (472) | +0.081 (169) |
 | 0.5 | -0.001 (857) | +0.015 (727) | +0.010 (582) | -0.004 (404) | -0.025 (137) |
 | 1.0 | +0.025 (832) | +0.022 (695) | +0.022 (563) | -0.033 (399) | -0.073 (124) |
+
+# MODEL.md — spreads & totals (spread-ridge-v1)
+
+Last retrain: 2026-09-12 04:01 UTC · model_run id 49
+
+Ridge regression for the home margin on Elo diff (home field included), EPA rating diff, rest diff, divisional, neutral site, QB change, QB inexperience and an early-season flag; a second ridge for the game total. Walk-forward: every season 2019–2025 is predicted by a model fit on the seasons before it. Residual sd 13.10 pts. Anchor weight toward the closing spread chosen on 2024 by MAE: **0.90** (total: 0.70).
+
+Standardised coefficients: elo_diff +2.690, epa_diff +2.684, rest_diff +0.348, div_game -0.142, neutral -0.158, qb_change_diff -1.017, qb_inexp_diff +0.753, early_season -0.128
+
+## Walk-forward 2019–2025 — RAW model vs the closing spread (nflverse)
+
+MAE model **10.22** vs market **9.83** · straight-up 0.642 vs 0.662 · n=1871
+
+| min gap | bets | W-L-P | win rate | units (−110) | ROI |
+|---|---|---|---|---|---|
+| 0 pts | 1871 | 881-947-43 | 0.482 | -146.1 | -0.078 |
+| 1 pts | 1304 | 621-653-30 | 0.487 | -88.5 | -0.068 |
+| 2 pts | 832 | 376-437-19 | 0.462 | -95.2 | -0.114 |
+| 3 pts | 497 | 222-266-9 | 0.455 | -64.2 | -0.129 |
+| 4 pts | 278 | 141-134-3 | 0.513 | -5.8 | -0.021 |
+| 5 pts | 139 | 76-62-1 | 0.551 | +7.1 | +0.051 |
+| 7 pts | 50 | 27-23-0 | 0.540 | +1.5 | +0.031 |
+
+## Test 2025 — RAW model
+
+MAE model 10.33 vs market 9.72 · n=272
+
+| min gap | bets | W-L-P | win rate | units (−110) | ROI |
+|---|---|---|---|---|---|
+| 0 pts | 272 | 122-149-1 | 0.450 | -38.1 | -0.140 |
+| 1 pts | 190 | 85-104-1 | 0.450 | -26.7 | -0.141 |
+| 2 pts | 115 | 44-71-0 | 0.383 | -31.0 | -0.270 |
+| 3 pts | 74 | 28-46-0 | 0.378 | -20.5 | -0.278 |
+| 4 pts | 43 | 16-27-0 | 0.372 | -12.5 | -0.290 |
+| 5 pts | 19 | 6-13-0 | 0.316 | -7.5 | -0.397 |
+| 7 pts | 8 | 2-6-0 | 0.250 | -4.2 | -0.523 |
+
+## Weeks 1–4 vs weeks 5+ (walk-forward, RAW) — where a ratings model can and cannot beat the line
+
+Weeks 1–4: MAE 10.22 vs 9.62
+
+| min gap | bets | W-L-P | win rate | units (−110) | ROI |
+|---|---|---|---|---|---|
+| 0 pts | 446 | 186-250-10 | 0.427 | -80.9 | -0.181 |
+| 1 pts | 320 | 140-174-6 | 0.446 | -46.7 | -0.146 |
+| 2 pts | 216 | 94-118-4 | 0.443 | -32.5 | -0.151 |
+| 3 pts | 138 | 56-80-2 | 0.412 | -29.1 | -0.211 |
+| 4 pts | 82 | 41-41-0 | 0.500 | -3.7 | -0.045 |
+| 5 pts | 40 | 23-17-0 | 0.575 | +3.9 | +0.098 |
+| 7 pts | 14 | 8-6-0 | 0.571 | +1.3 | +0.091 |
+
+Weeks 5+: MAE 10.22 vs 9.89
+
+| min gap | bets | W-L-P | win rate | units (−110) | ROI |
+|---|---|---|---|---|---|
+| 0 pts | 1425 | 695-697-33 | 0.499 | -65.2 | -0.046 |
+| 1 pts | 984 | 481-479-24 | 0.501 | -41.7 | -0.042 |
+| 2 pts | 616 | 282-319-15 | 0.469 | -62.6 | -0.102 |
+| 3 pts | 359 | 166-186-7 | 0.472 | -35.1 | -0.098 |
+| 4 pts | 196 | 100-93-3 | 0.518 | -2.1 | -0.011 |
+| 5 pts | 99 | 53-45-1 | 0.541 | +3.2 | +0.032 |
+| 7 pts | 36 | 19-17-0 | 0.528 | +0.3 | +0.008 |
+
+## By season (RAW, gap ≥ 3)
+
+| season | MAE model | MAE market | bets | W-L-P | units |
+|---|---|---|---|---|---|
+| 2019 | 10.64 | 10.21 | 73 | 32-38-3 | -8.9 |
+| 2020 | 10.03 | 9.83 | 60 | 27-33-0 | -8.5 |
+| 2021 | 11.21 | 10.78 | 85 | 39-45-1 | -9.5 |
+| 2022 | 9.04 | 8.74 | 71 | 34-35-2 | -4.1 |
+| 2023 | 10.35 | 9.90 | 56 | 23-32-1 | -11.1 |
+| 2024 | 9.93 | 9.61 | 78 | 39-37-2 | -1.5 |
+| 2025 | 10.33 | 9.72 | 74 | 28-46-0 | -20.5 |
+
+The /games page shows the blended projection (what we would actually bet off) and the raw one. Spread picks are flagged as bets only where the table above shows the gap bucket is profitable out of sample; otherwise the pick is shown as a lean with no stake, exactly like the moneyline layer.
