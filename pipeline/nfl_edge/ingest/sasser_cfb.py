@@ -135,10 +135,11 @@ def grade_pick(pick_line: float, is_home: bool, home_score: int, away_score: int
 
 
 def grade_sasser_cfb() -> int:
-    """Grade every ungraded pick whose game date has passed (before today, US time), at −110 (his site shows no price)."""
+    """Grade every ungraded pick whose game date is today (US Central) or earlier, at −110 (his site shows no price).
+    Same-day games are fetched too; only ESPN state 'post' grades, so an in-progress game is just skipped until the next run."""
     today_ct = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=5)).date()
     picks = db.read_sql("""SELECT p.* FROM external_picks p LEFT JOIN external_grades g ON g.pick_id = p.id
-                           WHERE g.id IS NULL AND p.source = :s AND p.game_date < :d AND p.pick_line IS NOT NULL AND p.pick_is_home IS NOT NULL
+                           WHERE g.id IS NULL AND p.source = :s AND p.game_date <= :d AND p.pick_line IS NOT NULL AND p.pick_is_home IS NOT NULL
                            ORDER BY p.game_date""", {"s": SOURCE, "d": today_ct})
     if picks.empty:
         print("[sasser] nothing to grade"); return 0
