@@ -6,6 +6,17 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 import sys
 
 
+def _grade_cfb_quietly():
+    """Grade finished CFB picks on every scheduled run. GitHub's cron drops or delays the Wed/Fri/Sat/Sun CFB job
+    (Sep 13: the 15:00 UTC run never fired, 47 Saturday games sat pending), so the many Sunday/Monday runs do it too.
+    ESPN-only, no credits; never lets a CFB failure break the NFL job."""
+    try:
+        from .ingest.sasser_cfb import grade_sasser_cfb
+        grade_sasser_cfb()
+    except Exception as e:
+        print(f"[cfb] grading skipped: {e}")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="nfl_edge")
     p.add_argument("job")
@@ -66,6 +77,7 @@ def main(argv=None):
             score_spreads(a.week)
         except Exception as e:
             print(f"[snapshot] spreads skipped: {e}")
+        _grade_cfb_quietly()
     elif a.job == "build_features":
         from .features.build import build_features
         build_features(a.seasons, a.week)
@@ -104,11 +116,7 @@ def main(argv=None):
         except Exception as e:
             print(f"[grade] ESPN box scores skipped: {e}")
         grade_cards()
-        try:
-            from .ingest.sasser_cfb import grade_sasser_cfb
-            grade_sasser_cfb()
-        except Exception as e:
-            print(f"[grade] CFB external picks skipped: {e}")
+        _grade_cfb_quietly()
         from .models.calibration import train as train_cal
         try:
             train_cal()
@@ -150,6 +158,7 @@ def main(argv=None):
             score_spreads()
         except Exception as e:
             print(f"[gameday] spreads skipped: {e}")
+        _grade_cfb_quietly()
     elif a.job == "bootstrap":    # first run from scratch
         ingest.ingest_schedule(list(range(2009, _cur() + 1))); ingest.ingest_pbp(); ingest.ingest_weekly_stats()
         ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
