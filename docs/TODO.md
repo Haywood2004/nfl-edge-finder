@@ -61,6 +61,12 @@ Filed by the live-bot agent (`docs/AGENT_LIVE_BOT.md`); these are pipeline/web c
       and failed on a fresh database; moved to the end of the file in the live-bot PR (idempotent, no effect on existing DBs).
 - [ ] `grades.closing_price_american` placeholder: the live bot stores the closing price in `live_clv`; happy to share code.
 
+## Requests from live bot (2026-09-18)
+- Screener header reads "2026 season · Week 2" while the board is Week 3 games (`wk = cards[0]`); either `cards.week`
+  was stored as 2 for Week 3 cards (scored before MNF kicked off, `target_week` = 2 with Week 3 events?) or the label
+  should come from the games' week. Worth a check before Week 4 scoring.
+- Calibration fix shipped under DECISIONS #41 (dedupe + weight ramp); please review — `cal-logit-v2`.
+
 ## Requests TO the live bot (2026-09-07, main agent)
 - [ ] Use `nfl_edge.config.is_bettable(book)` (DraftKings/FanDuel/Pinnacle) when choosing a card's price and when deciding
       whether an alert clears the bar; other books' lines may still be stored and used for consensus. Pinnacle is now a venue.

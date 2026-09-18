@@ -221,3 +221,13 @@ carries the ESPN event id, which is what makes free grading possible), store eve
 changed pick is a new row, the record counts the first), grade at −110 from the ESPN college summary, show his
 record as WE measure it. No CFBD API key needed. If four weeks of our grading show him at ≥55% we can talk about
 a CFB model of our own; at his contest rate (52.9%) the honest expectation is roughly break-even.
+
+41. **Calibration live rows are deduped to one row per pick, and their weight ramps 1×→3× (2026-09-18, live-bot agent at
+Haywood's request — calibration is otherwise the main agent's).** Symptom: Week 3 screener showed 26 picks over the raw
+bars and 0.00u staked — every "real edge" negative. Cause: `_live_rows` pulled every graded card, and cards are
+append-only across snapshots, so two weeks produced 9,388 "live" training rows (the same ~800 picks 5–10× each) which
+at the 3× weight outvoted the 15k backtest rows; the fitted coefficient on `edge` went to −0.012, i.e. "raw edge means
+nothing", and Kelly on the calibrated probability sized everything to zero. Fix: `DISTINCT ON (season, week, market,
+player_id, side)` ordered by `created_at` (the first version, as `/model-record` counts it) and
+`live_w = 1 + 2·min(n_live/2000, 1)`. Calibrator version `cal-logit-v2`. The honest caveat stands: the model's
+deduped paper record is under 50% so far; if the retrained calibrator still sizes small, that is the data talking.
