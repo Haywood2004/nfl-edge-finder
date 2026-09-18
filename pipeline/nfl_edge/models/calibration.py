@@ -30,7 +30,8 @@ from .. import db
 from ..config import ARTIFACT_DIR, ROOT
 
 MARKET_KEY = "calibration"
-VERSION = "cal-logit-v1"
+VERSION = "cal-logit-v2"     # v2: live rows deduped to first version per pick, weight ramps 1×→3× (DECISIONS #41)
+LIVE_FULL_WEIGHT_N = 2000       # deduped live picks at which live rows reach 3× weight (~ a full season of boards)
 MARKETS = ["player_pass_yds", "player_reception_yds", "player_receptions", "player_rush_yds"]
 USAGE_COL = {"player_pass_yds": "att_ewm", "player_reception_yds": "tgt_ewm", "player_receptions": "tgt_ewm", "player_rush_yds": "car_ewm"}
 USAGE_SCALE = {"player_pass_yds": 35.0, "player_reception_yds": 8.0, "player_receptions": 8.0, "player_rush_yds": 15.0}
@@ -102,12 +103,18 @@ def _backtest_rows() -> pd.DataFrame:
 
 def _live_rows() -> pd.DataFrame:
     """Graded live cards (the feedback loop)."""
-    r = db.read_sql("""SELECT c.market, c.side, c.edge, c.model_prob, c.market_prob, c.line, c.factors, gr.result,
+    # One row per pick — the first version of each (week, market, player, side), as /model-record counts it. Cards are
+    # append-only across snapshots, so without this the same pick entered 5–10× (9,388 "live" rows after two weeks,
+    # 2026-09-18) and, at 3× weight, drowned three seasons of backtests: the fitted edge coefficient went to −0.01
+    # and every stake on the board became zero. DECISIONS #41.
+    r = db.read_sql("""SELECT DISTINCT ON (c.season, c.week, c.market, c.player_id, c.side)
+                              c.market, c.side, c.edge, c.model_prob, c.market_prob, c.line, c.factors, gr.result,
                               f.features
                        FROM grades gr JOIN cards c ON c.id = gr.card_id
                        JOIN feat_player_game f ON f.season=c.season AND f.week=c.week AND f.player_id=c.player_id AND f.game_id=c.game_id
                        WHERE gr.result IN ('win','loss') AND c.market = ANY(:m)
-                         AND c.source = 'model'   -- live-bot paper alerts stay out until an is_live feature is agreed (docs/LIVE.md)""", {"m": MARKETS})
+                         AND c.source = 'model'   -- live-bot paper alerts stay out until an is_live feature is agreed (docs/LIVE.md)
+                       ORDER BY c.season, c.week, c.market, c.player_id, c.side, c.created_at ASC""", {"m": MARKETS})
     out = []
     for _, x in r.iterrows():
         X = json.loads(x.features) if isinstance(x.features, str) else x.features
@@ -138,8 +145,11 @@ def train(persist: bool = True) -> int | None:
     data = pd.concat([bt, live], ignore_index=True) if len(live) else bt
     if data.empty:
         print("[calibration] no training rows (run backtest_lines first)"); return None
-    # live results count more than backtest rows (they are the world we are actually betting into)
-    w = np.where(data.source == "live", 3.0, 1.0)
+    # Live results are the world we are actually betting into, but two weeks of them must not outvote three seasons
+    # of backtests: weight ramps from 1× to 3× as the deduped live sample grows to LIVE_FULL_WEIGHT_N picks.
+    live_w = 1.0 + 2.0 * min(len(live) / LIVE_FULL_WEIGHT_N, 1.0)
+    w = np.where(data.source == "live", live_w, 1.0)
+    print(f"[calibration] live row weight {live_w:.2f} ({len(live)} deduped live picks)")
     pipe = make_pipeline(StandardScaler(), LogisticRegression(C=0.3, max_iter=2000))
     pipe.fit(data[FEATURES].fillna(0.0), data.win, logisticregression__sample_weight=w)
     cal = Calibrator(pipe, int(len(data)), int(len(live)))
