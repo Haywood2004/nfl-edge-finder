@@ -105,8 +105,14 @@ def skill_features(log: pd.DataFrame) -> pd.DataFrame:
 
 
 def current_skill_players(season: int, teams: list[str]) -> pd.DataFrame:
-    """Rostered WR/TE/RB/FB for the target week (roster snapshot for the season)."""
+    """ACTIVE-roster WR/TE/RB/FB for the target week.
+
+    Only players who can actually dress: nflverse roster statuses ACT (and INA = inactive-but-on-roster). CUT, RES
+    (IR/PUP), DEV (practice squad), RET and EXE are excluded. Training rows rank a player among teammates who PLAYED,
+    so the live pseudo-rows must rank among teammates who CAN play — ranking against 500+ cut/IR/PS bodies pushed
+    every real lead back down the depth chart and produced fake Unders (DECISIONS #42)."""
     r = db.read_sql("""SELECT DISTINCT ON (gsis_id) gsis_id AS player_id, full_name AS player_name, position, team
                        FROM raw_rosters WHERE season=:s AND position IN ('WR','TE','RB','FB') AND team = ANY(:t)
+                         AND status IN ('ACT', 'INA')
                        ORDER BY gsis_id, (status='ACT') DESC""", {"s": season, "t": teams})
     return r

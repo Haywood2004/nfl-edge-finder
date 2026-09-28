@@ -179,6 +179,11 @@ def _skill_rows(seasons, ctx, dfe, off, tw, regime, inj, cur_season, cur_week, a
     # only players with at least one prior active game (rookies with no history get no projection yet)
     seen = set(log[log.targets.fillna(0) + log.carries.fillna(0) >= 1].player_id)
     ros = ros[ros.player_id.isin(seen)]
+    # players already ruled Out/Doubtful for the target week don't play → they must not take a depth-chart rank either
+    from .context import _final_status
+    st = _final_status([cur_season])
+    ruled_out = set(st[(st.week == cur_week) & (st.out == 1)].gsis_id)
+    ros = ros[~ros.player_id.isin(ruled_out)]
     pseudo = tg.merge(ros, on="team", how="inner")
     pseudo_rows = pd.DataFrame({
         "player_id": pseudo.player_id, "player_name": pseudo.player_name, "position": pseudo.position,
