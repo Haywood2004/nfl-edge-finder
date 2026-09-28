@@ -11,10 +11,20 @@ from .config import DATABASE_URL
 _engine: Engine | None = None
 
 
+def _normalise_url(url: str) -> str:
+    """Neon/Heroku hand out `postgres://` and `postgresql+psycopg://` (psycopg 3) strings; this project ships
+    psycopg2-binary only, so pin the driver explicitly. Every scheduled run from #91 failed on
+    `ModuleNotFoundError: psycopg` after the DATABASE_URL secret changed to the +psycopg form."""
+    for bad in ("postgresql+psycopg://", "postgresql+psycopg_async://", "postgres://", "postgresql://"):
+        if url.startswith(bad):
+            return "postgresql+psycopg2://" + url[len(bad):]
+    return url
+
+
 def engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+        _engine = create_engine(_normalise_url(DATABASE_URL), pool_pre_ping=True, future=True)
     return _engine
 
 
