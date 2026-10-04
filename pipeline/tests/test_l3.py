@@ -136,3 +136,8 @@ def test_naive_g10_gate():
     assert l3.naive_g10_verdict(59.5, 71.3, 3, "soft") == "Over"        # Kyren Williams: +19.9%
     assert l3.naive_g10_verdict(246.5, 290.7, 3, "stingy") is None      # big gap but signals disagree
     assert l3.naive_gap(200.0, 220.0) == pytest.approx(0.10)
+
+
+def test_rb1_only_keeps_highest_line_per_team():
+    df = pd.DataFrame({"game_id": ["g1"] * 4, "team": ["A", "A", "B", "B"], "player_id": list("wxyz"), "line": [88.5, 22.5, 59.5, 10.5]})
+    assert set(l3.rb1_only(df).player_id) == {"w", "y"}
