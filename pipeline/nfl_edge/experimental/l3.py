@@ -374,6 +374,17 @@ def naive_verdict(line: float, l3: float, n: int, cond: str) -> str | None:
     return None
 
 
+INJURY_FLAGGED = ("Questionable", "Doubtful", "Out")
+
+
+def rb1_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Rushing props: keep each team's RB1 per game = the RB with the highest posted rushing line (the book's view of
+    the lead back). Backups with 10–30 yd lines are not what the rule is about (DECISIONS #48)."""
+    if df.empty:
+        return df
+    return df.sort_values("line", ascending=False).drop_duplicates(["game_id", "team"]).sort_index()
+
+
 def naive_gap(line: float, l3: float) -> float:
     """(player L3 − line) / line: +0.30 = he has averaged 30% more than the line."""
     if line is None or l3 != l3 or not line:
