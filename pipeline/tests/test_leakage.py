@@ -44,3 +44,15 @@ def test_player_rolling_features_shift():
                               ORDER BY season DESC, week DESC LIMIT 3""", {"p": x.player_id, "s": 2025, "w": 10})
         if len(hist) == 3:
             assert abs(hist.passing_yards.mean() - f["py_l3"]) < 1e-6
+
+
+def test_l3_defense_as_of_before_first_kickoff():
+    """L3 experiment (DECISIONS #43): the defense table for week w only uses games that kicked off before week w."""
+    n = db.scalar("""SELECT count(*) FROM experimental_l3_defense d JOIN (
+                        SELECT season, week, min(kickoff_utc) k FROM raw_games GROUP BY 1,2) g USING (season, week)
+                     WHERE d.as_of >= g.k""")
+    assert n == 0
+
+
+def test_l3_flags_written_before_kickoff():
+    assert db.scalar("SELECT count(*) FROM experimental_l3_flags WHERE created_at >= kickoff_utc") == 0
