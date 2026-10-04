@@ -715,3 +715,92 @@ CREATE TABLE IF NOT EXISTS placed_bets (
   note text
 );
 CREATE INDEX IF NOT EXISTS placed_bets_card ON placed_bets(card_id);
+
+-- ---------------------------------------------------------------------------
+-- EXPERIMENTAL: L3 Defense vs. Line (DECISIONS #43–#46). Separate ledger; never on the screener, never staked.
+-- Append-only like everything else: a new run (snapshot/label) writes new rows; nothing is updated or deleted.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS experimental_l3_defense (
+  id            bigserial PRIMARY KEY,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  run_label     text NOT NULL,
+  season        int NOT NULL,
+  week          int NOT NULL,
+  team          text NOT NULL,
+  as_of         timestamptz NOT NULL,          -- last kickoff of any game used (< first kickoff of `week`)
+  games         int,
+  l3_games      int,
+  l3_opps       text,
+  pass_ypg_l3   numeric,                       -- TeamRankings definition (net of sacks)
+  rush_ypg_l3   numeric,
+  tr_pass_l3    numeric,                       -- TeamRankings "Last 3" scraped at run time (cross-check only)
+  tr_rush_l3    numeric,
+  tr_status     text,                          -- ok | mismatch | unavailable
+  pass_naive_rank int, pass_naive_cond text,
+  rush_naive_rank int, rush_naive_cond text,
+  pass_v1_cond  text, rush_v1_cond text,
+  stats         jsonb NOT NULL,                -- per stat: raw, adj, shrunk, shrink, sd, z, rank, n, league
+  UNIQUE (season, week, team, run_label)
+);
+
+CREATE TABLE IF NOT EXISTS experimental_l3_flags (
+  id              bigserial PRIMARY KEY,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  run_label       text NOT NULL,
+  version         text NOT NULL,               -- naive_v0 | l3_v1
+  season          int NOT NULL,
+  week            int NOT NULL,
+  game_id         text,
+  kickoff_utc     timestamptz,
+  player_id       text,
+  player_name     text,
+  position        text,
+  team            text,
+  opponent        text,
+  market          text NOT NULL,               -- player_pass_yds | player_rush_yds
+  side            text,                        -- Over | Under | NULL = evaluated, no flag
+  line            numeric,
+  price_american  int,
+  price_decimal   numeric,
+  book            text,
+  snapshot_id     bigint,
+  fair_over       numeric,                     -- mean no-vig P(over) across bettable books at this line
+  market_prob     numeric,                     -- no-vig P(side) (NULL when no side)
+  model_prob      numeric,                     -- l3_v1 P(side); NULL for naive_v0
+  edge            numeric,
+  p_over          numeric,
+  projection      numeric,
+  proj_p25        numeric,
+  proj_p75        numeric,
+  player_l3       numeric,
+  player_l3_games text,
+  def_cond        text,                        -- soft | stingy | ''
+  tag             text NOT NULL DEFAULT 'watch',   -- watch | lean (publishing rule, DECISIONS #46)
+  injury_status   text,
+  factors         jsonb NOT NULL DEFAULT '[]',
+  inputs          jsonb NOT NULL DEFAULT '{}',
+  UNIQUE (version, season, week, player_id, market, snapshot_id)
+);
+CREATE INDEX IF NOT EXISTS experimental_l3_flags_sw ON experimental_l3_flags(season, week, version);
+
+CREATE TABLE IF NOT EXISTS experimental_l3_grades (
+  id            bigserial PRIMARY KEY,
+  flag_id       bigint NOT NULL UNIQUE REFERENCES experimental_l3_flags(id),
+  graded_at     timestamptz NOT NULL DEFAULT now(),
+  actual        numeric,
+  result        text NOT NULL,                 -- win | loss | push | void
+  profit_units  numeric NOT NULL,
+  closing_line  numeric,
+  clv_prob      numeric
+);
+
+-- Backtest summary + publishing-rule status the L3 page shows (copied from l3_params.json by each scoring run).
+CREATE TABLE IF NOT EXISTS experimental_l3_meta (
+  id          bigserial PRIMARY KEY,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  generated_at text NOT NULL UNIQUE,            -- l3_params.json generated_at; one row per fitted version
+  backtest    jsonb NOT NULL,
+  lean_eligible jsonb NOT NULL,
+  eb          jsonb NOT NULL,
+  eb_validation jsonb NOT NULL
+);
