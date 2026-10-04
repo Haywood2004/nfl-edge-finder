@@ -8,6 +8,7 @@ const nav = [
   { href: "/cfb", label: "CFB" },
   { href: "/rankings/defense", label: "Defense" },
   { href: "/backtest", label: "Backtest" },
+  { href: "/experimental/l3", label: "L3 (exp)" },
   { href: "/track-record", label: "Track Record" },
   { href: "/how", label: "Methodology" },
 ];
