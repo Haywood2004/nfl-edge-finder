@@ -12,3 +12,4 @@ pipeline/.cache/
 live/nfl_edge_live.egg-info/
 pipeline/artifacts/live_replay_*.parquet
 pipeline/artifacts/backtest_*.parquet
+pipeline/artifacts/l3_*.csv
