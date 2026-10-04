@@ -804,3 +804,11 @@ CREATE TABLE IF NOT EXISTS experimental_l3_meta (
   eb          jsonb NOT NULL,
   eb_validation jsonb NOT NULL
 );
+
+-- Corrections to L3 flags (append-only): a voided flag is skipped by the page, the grader and the ledger.
+CREATE TABLE IF NOT EXISTS experimental_l3_voids (
+  id         bigserial PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  flag_id    bigint NOT NULL UNIQUE REFERENCES experimental_l3_flags(id),
+  reason     text NOT NULL
+);
