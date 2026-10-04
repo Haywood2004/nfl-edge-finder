@@ -46,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <li><Link href="/kelly" className="hover:text-fg">Kelly sizing</Link></li>
                 <li><Link href="/track-record" className="hover:text-fg">Track record</Link></li>
                 <li><Link href="/model-record" className="hover:text-fg">Model paper record</Link></li>
+                <li><Link href="/experimental/l3" className="hover:text-fg">L3 Defense vs. Line (experimental)</Link></li>
                 <li><Link href="/how" className="hover:text-fg">Methodology &amp; model card</Link></li>
               </ul>
             </div>
