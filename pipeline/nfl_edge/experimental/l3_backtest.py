@@ -140,6 +140,8 @@ def score_backtest(panel: pd.DataFrame, cons: pd.DataFrame, proj: l3.Projector, 
     p["nname"] = p.name.map(l3.norm_name)
     b = cons.merge(p, on=["season", "week", "game_id", "nname"], how="inner")
     b = b[b.actual_vol.fillna(0) > 0]                 # no usage → the book voids the prop
+    if market == l3.RUSH_MKT:
+        b = l3.rb1_only(b)
     b["proj"] = proj.project(b).values
     b["p_over"] = proj.p_over(b.proj.values, b.line.values)
     rows = []
