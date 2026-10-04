@@ -1,0 +1,806 @@
+-- NFL Edge Finder — Postgres schema
+-- Conventions:
+--   raw_*   : source-shaped tables written only by ingest jobs. Nothing downstream reads them
+--             except the feature builders in /pipeline/nfl_edge/features.
+--   odds_*  : append-only odds snapshots (never overwritten, never deleted).
+--   feat_*  : point-in-time features; every row carries as_of < kickoff.
+--   model_* / projections / cards / grades : append-only model outputs and track record.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ---------------------------------------------------------------------------
+-- RAW
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_games (
+  game_id        text PRIMARY KEY,
+  season         int NOT NULL,
+  game_type      text,
+  week           int NOT NULL,
+  gameday        date,
+  weekday        text,
+  gametime       text,
+  kickoff_utc    timestamptz,             -- derived from gameday+gametime (ET) at ingest
+  away_team      text NOT NULL,
+  home_team      text NOT NULL,
+  location       text,                     -- Home | Neutral
+  away_score     int,
+  home_score     int,
+  result         numeric,
+  total          numeric,
+  overtime       int,
+  away_rest      int,
+  home_rest      int,
+  away_moneyline numeric,
+  home_moneyline numeric,
+  spread_line    numeric,
+  total_line     numeric,
+  div_game       int,
+  roof           text,
+  surface        text,
+  temp           numeric,
+  wind           numeric,
+  away_qb_id     text,
+  home_qb_id     text,
+  away_qb_name   text,
+  home_qb_name   text,
+  stadium_id     text,
+  stadium        text,
+  ingested_at    timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS location text;
+ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS home_coach text;
+ALTER TABLE raw_games ADD COLUMN IF NOT EXISTS away_coach text;
+CREATE INDEX IF NOT EXISTS raw_games_season_week ON raw_games(season, week);
+
+-- Curated column subset of nflverse pbp (full parquet kept in pipeline/.cache). See DECISIONS.md #4.
+CREATE TABLE IF NOT EXISTS raw_pbp (
+  play_id            numeric NOT NULL,
+  game_id            text NOT NULL,
+  season             int NOT NULL,
+  week               int NOT NULL,
+  season_type        text,
+  posteam            text,
+  defteam            text,
+  home_team          text,
+  away_team          text,
+  qtr                int,
+  down               int,
+  ydstogo            int,
+  yardline_100       int,
+  game_seconds_remaining int,
+  play_type          text,
+  pass               int,
+  rush               int,
+  qb_dropback        int,
+  qb_scramble        int,
+  sack               int,
+  complete_pass      int,
+  incomplete_pass    int,
+  interception       int,
+  yards_gained       int,
+  air_yards          numeric,
+  yards_after_catch  numeric,
+  passing_yards      numeric,
+  rushing_yards      numeric,
+  receiving_yards    numeric,
+  epa                numeric,
+  wpa                numeric,
+  cpoe               numeric,
+  success            numeric,
+  xpass              numeric,
+  pass_oe            numeric,
+  touchdown          int,
+  pass_touchdown     int,
+  rush_touchdown     int,
+  passer_player_id   text,
+  passer_player_name text,
+  receiver_player_id text,
+  receiver_player_name text,
+  rusher_player_id   text,
+  rusher_player_name text,
+  pass_location      text,
+  pass_length        text,
+  run_location       text,
+  shotgun            int,
+  no_huddle          int,
+  score_differential int,
+  PRIMARY KEY (game_id, play_id)
+);
+CREATE INDEX IF NOT EXISTS raw_pbp_season_week ON raw_pbp(season, week);
+CREATE INDEX IF NOT EXISTS raw_pbp_defteam ON raw_pbp(defteam, season);
+
+-- nflverse stats_player_week (subset of 150 columns; passing/rushing/receiving core)
+CREATE TABLE IF NOT EXISTS raw_weekly_stats (
+  player_id            text NOT NULL,
+  player_name          text,
+  position             text,
+  season               int NOT NULL,
+  week                 int NOT NULL,
+  season_type          text,
+  team                 text,
+  opponent_team        text,
+  completions          int,
+  attempts             int,
+  passing_yards        numeric,
+  passing_tds          int,
+  passing_interceptions int,
+  sacks_suffered       numeric,
+  passing_air_yards    numeric,
+  passing_yards_after_catch numeric,
+  passing_epa          numeric,
+  passing_cpoe         numeric,
+  carries              int,
+  rushing_yards        numeric,
+  rushing_tds          int,
+  receptions           int,
+  targets              int,
+  receiving_yards      numeric,
+  receiving_tds        int,
+  receiving_air_yards  numeric,
+  receiving_yards_after_catch numeric,
+  target_share         numeric,
+  air_yards_share      numeric,
+  wopr                 numeric,
+  fantasy_points_ppr   numeric,
+  PRIMARY KEY (player_id, season, week, season_type)
+);
+CREATE INDEX IF NOT EXISTS raw_weekly_stats_sw ON raw_weekly_stats(season, week);
+
+-- Injury reports; append-only history keyed by report date so upgrades/downgrades are visible.
+CREATE TABLE IF NOT EXISTS raw_injuries (
+  id                       bigserial PRIMARY KEY,
+  season                   int NOT NULL,
+  week                     int NOT NULL,
+  season_type              text,
+  team                     text,
+  gsis_id                  text,
+  full_name                text,
+  position                 text,
+  report_primary_injury    text,
+  report_status            text,
+  practice_primary_injury  text,
+  practice_status          text,
+  source                   text NOT NULL DEFAULT 'nflverse',
+  observed_at              timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (season, week, season_type, team, gsis_id, report_status, practice_status, source)
+);
+
+CREATE TABLE IF NOT EXISTS raw_depth_charts (
+  id           bigserial PRIMARY KEY,
+  dt           timestamptz NOT NULL,
+  season       int NOT NULL,
+  team         text NOT NULL,
+  player_name  text,
+  gsis_id      text,
+  pos_grp      text,
+  pos_abb      text,
+  pos_slot     int,
+  pos_rank     int,
+  UNIQUE (dt, team, gsis_id, pos_abb, pos_slot)
+);
+CREATE INDEX IF NOT EXISTS raw_depth_charts_team_dt ON raw_depth_charts(team, dt DESC);
+
+CREATE TABLE IF NOT EXISTS raw_rosters (
+  season       int NOT NULL,
+  team         text NOT NULL,
+  gsis_id      text NOT NULL,
+  full_name    text,
+  position     text,
+  depth_chart_position text,
+  status       text,
+  years_exp    int,
+  headshot_url text,
+  PRIMARY KEY (season, gsis_id)
+);
+ALTER TABLE raw_rosters ADD COLUMN IF NOT EXISTS espn_id text;   -- for mapping ESPN injury feed → gsis_id
+
+CREATE TABLE IF NOT EXISTS raw_snap_counts (
+  game_id      text NOT NULL,
+  season       int NOT NULL,
+  week         int NOT NULL,
+  pfr_player_id text NOT NULL,
+  player       text,
+  position     text,
+  team         text,
+  opponent     text,
+  offense_snaps int,
+  offense_pct  numeric,
+  defense_snaps int,
+  defense_pct  numeric,
+  PRIMARY KEY (game_id, pfr_player_id)
+);
+
+CREATE TABLE IF NOT EXISTS raw_weather (
+  id           bigserial PRIMARY KEY,
+  game_id      text NOT NULL,
+  fetched_at   timestamptz NOT NULL DEFAULT now(),
+  source       text NOT NULL DEFAULT 'open-meteo',
+  temp_f       numeric,
+  wind_mph     numeric,
+  precip_prob  numeric,
+  precip_in    numeric,
+  is_dome      boolean,
+  raw          jsonb
+);
+CREATE INDEX IF NOT EXISTS raw_weather_game ON raw_weather(game_id, fetched_at DESC);
+
+CREATE TABLE IF NOT EXISTS stadiums (
+  team         text PRIMARY KEY,
+  stadium      text,
+  lat          numeric,
+  lon          numeric,
+  roof         text,        -- dome | outdoors | retractable
+  tz           text
+);
+
+-- ---------------------------------------------------------------------------
+-- ODDS (append-only)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_usage (
+  id                 bigserial PRIMARY KEY,
+  ts                 timestamptz NOT NULL DEFAULT now(),
+  provider           text NOT NULL DEFAULT 'the-odds-api',
+  endpoint           text NOT NULL,
+  credits_used       int NOT NULL,
+  credits_remaining  int,
+  note               text
+);
+
+CREATE TABLE IF NOT EXISTS odds_snapshots (
+  id            bigserial PRIMARY KEY,
+  taken_at      timestamptz NOT NULL DEFAULT now(),
+  label         text NOT NULL,      -- tue_open | thu | sat_night | sun_am | pre_kick | gameday_poll | manual
+  season        int,
+  week          int,
+  markets       text[] NOT NULL,
+  credits_used  int NOT NULL DEFAULT 0,
+  source        text NOT NULL DEFAULT 'api'   -- api | file (recorded payload)
+);
+
+CREATE TABLE IF NOT EXISTS odds_events (
+  event_id      text PRIMARY KEY,
+  game_id       text REFERENCES raw_games(game_id),
+  commence_time timestamptz NOT NULL,
+  home_team     text NOT NULL,
+  away_team     text NOT NULL,
+  home_abbr     text,
+  away_abbr     text,
+  first_seen    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS odds_lines (
+  id             bigserial PRIMARY KEY,
+  snapshot_id    bigint NOT NULL REFERENCES odds_snapshots(id),
+  event_id       text NOT NULL REFERENCES odds_events(event_id),
+  market         text NOT NULL,       -- h2h | spreads | totals | player_pass_yds | ...
+  bookmaker      text NOT NULL,
+  book_title     text,
+  player         text,                -- prop description (book's player name) or NULL
+  player_id      text,                -- resolved nflverse gsis_id (may be NULL)
+  side           text NOT NULL,       -- Over | Under | team name | Yes
+  line           numeric,             -- point/handicap; NULL for h2h
+  price_decimal  numeric NOT NULL,
+  price_american int NOT NULL,
+  book_last_update timestamptz
+);
+CREATE INDEX IF NOT EXISTS odds_lines_snap ON odds_lines(snapshot_id);
+CREATE INDEX IF NOT EXISTS odds_lines_event_market ON odds_lines(event_id, market, player);
+
+-- Per snapshot × event × market × player × line: consensus + best price + no-vig fair prob.
+CREATE TABLE IF NOT EXISTS odds_consensus (
+  id                 bigserial PRIMARY KEY,
+  snapshot_id        bigint NOT NULL REFERENCES odds_snapshots(id),
+  event_id           text NOT NULL,
+  market             text NOT NULL,
+  player             text,
+  player_id          text,
+  line               numeric,
+  n_books            int NOT NULL,
+  over_best_price    numeric,  over_best_book text,  over_best_american int,
+  under_best_price   numeric,  under_best_book text, under_best_american int,
+  over_consensus_prob  numeric,   -- mean no-vig prob across books
+  under_consensus_prob numeric,
+  UNIQUE (snapshot_id, event_id, market, player, line)
+);
+
+-- ---------------------------------------------------------------------------
+-- FEATURES (point-in-time)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS feat_team_defense (
+  season      int NOT NULL,
+  week        int NOT NULL,          -- the week these features are FOR (built from data before it)
+  team        text NOT NULL,
+  as_of       timestamptz NOT NULL,
+  games       int,
+  pass_yds_allowed_pg   numeric,  pass_yds_allowed_rank int,
+  pass_epa_allowed      numeric,  pass_epa_allowed_rank int,
+  rush_yds_allowed_pg   numeric,  rush_yds_allowed_rank int,
+  rush_epa_allowed      numeric,  rush_epa_allowed_rank int,
+  dropbacks_faced_pg    numeric,
+  yds_per_dropback_allowed numeric, yds_per_dropback_rank int,
+  sack_rate             numeric,
+  explosive_pass_rate_allowed numeric,
+  yac_per_comp_allowed  numeric,
+  wr_yds_allowed_pg     numeric,  wr_yds_allowed_rank int,
+  te_yds_allowed_pg     numeric,  te_yds_allowed_rank int,
+  rb_rec_yds_allowed_pg numeric,  rb_rec_yds_allowed_rank int,
+  sos_adj_pass_yds_allowed numeric, sos_adj_pass_rank int,
+  PRIMARY KEY (season, week, team)
+);
+
+CREATE TABLE IF NOT EXISTS feat_team_offense (
+  season      int NOT NULL,
+  week        int NOT NULL,
+  team        text NOT NULL,
+  as_of       timestamptz NOT NULL,
+  games       int,
+  plays_pg    numeric,
+  pass_rate   numeric,
+  proe        numeric,          -- pass rate over expectation
+  sec_per_play numeric,
+  epa_per_play numeric,
+  pass_epa_per_db numeric,
+  pass_yds_pg numeric,
+  PRIMARY KEY (season, week, team)
+);
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS neutral_pass_rate numeric;   -- pass rate, Q1-3, score within 7
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS neutral_plays_pg numeric;
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS shotgun_rate numeric;
+ALTER TABLE feat_team_offense ADD COLUMN IF NOT EXISTS no_huddle_rate numeric;
+
+-- One row per (player, game) for the market being modeled. Wide table; nullable where unavailable.
+CREATE TABLE IF NOT EXISTS feat_player_game (
+  season        int NOT NULL,
+  week          int NOT NULL,
+  game_id       text NOT NULL,
+  player_id     text NOT NULL,
+  player_name   text,
+  position      text,
+  team          text NOT NULL,
+  opponent      text NOT NULL,
+  is_home       boolean,
+  kickoff_utc   timestamptz NOT NULL,
+  as_of         timestamptz NOT NULL,
+  features      jsonb NOT NULL,       -- flat {feature_name: value}
+  target_passing_yards numeric,        -- NULL until game finalizes
+  target_attempts      numeric,
+  PRIMARY KEY (season, week, player_id, game_id)
+);
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_receiving_yards numeric;   -- skill positions (Milestone 2)
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_receptions numeric;
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_rushing_yards numeric;
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_targets numeric;
+ALTER TABLE feat_player_game ADD COLUMN IF NOT EXISTS target_carries numeric;
+CREATE INDEX IF NOT EXISTS feat_player_game_pos ON feat_player_game(position, season, week);
+CREATE INDEX IF NOT EXISTS feat_player_game_sw ON feat_player_game(season, week);
+
+-- ---------------------------------------------------------------------------
+-- MODELS / PROJECTIONS / CARDS / GRADES (append-only)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS model_runs (
+  id           bigserial PRIMARY KEY,
+  market       text NOT NULL,
+  version      text NOT NULL,
+  trained_at   timestamptz NOT NULL DEFAULT now(),
+  train_seasons int[],
+  valid_seasons int[],
+  test_seasons  int[],
+  metrics      jsonb NOT NULL,
+  feature_names text[],
+  artifact_path text,
+  artifact      bytea             -- pickled model, so stateless runners (GitHub Actions) can load it
+);
+ALTER TABLE model_runs ADD COLUMN IF NOT EXISTS artifact bytea;
+
+CREATE TABLE IF NOT EXISTS projections (
+  id           bigserial PRIMARY KEY,
+  model_run_id bigint NOT NULL REFERENCES model_runs(id),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  season       int NOT NULL,
+  week         int NOT NULL,
+  game_id      text NOT NULL,
+  player_id    text NOT NULL,
+  player_name  text,
+  team         text,
+  opponent     text,
+  market       text NOT NULL,
+  mean         numeric NOT NULL,
+  sd           numeric NOT NULL,
+  q10 numeric, q25 numeric, q50 numeric, q75 numeric, q90 numeric,
+  factors      jsonb NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS projections_sw ON projections(season, week, market);
+
+CREATE TABLE IF NOT EXISTS cards (
+  id              bigserial PRIMARY KEY,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  season          int NOT NULL,
+  week            int NOT NULL,
+  game_id         text NOT NULL,
+  event_id        text,
+  player_id       text,
+  player_name     text,
+  position        text,
+  team            text,
+  opponent        text,
+  kickoff_utc     timestamptz,
+  market          text NOT NULL,
+  side            text NOT NULL,
+  line            numeric,
+  price_american  int NOT NULL,
+  price_decimal   numeric NOT NULL,
+  book            text NOT NULL,
+  snapshot_id     bigint REFERENCES odds_snapshots(id),
+  projection_id   bigint REFERENCES projections(id),
+  model_run_id    bigint REFERENCES model_runs(id),
+  model_prob      numeric NOT NULL,
+  market_prob     numeric NOT NULL,
+  edge            numeric NOT NULL,
+  ev_per_unit     numeric NOT NULL,
+  confidence      int NOT NULL,
+  score           numeric NOT NULL,     -- edge × confidence, feed default sort
+  published       boolean NOT NULL DEFAULT false,
+  factors         jsonb NOT NULL,
+  line_open       numeric,
+  line_open_snapshot_id bigint,
+  book_prices     jsonb NOT NULL DEFAULT '[]',   -- [{book, side, line, american}] at publish
+  trend_badges    text[] NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS cards_sw ON cards(season, week, published);
+
+CREATE TABLE IF NOT EXISTS grades (
+  id            bigserial PRIMARY KEY,
+  card_id       bigint NOT NULL UNIQUE REFERENCES cards(id),
+  graded_at     timestamptz NOT NULL DEFAULT now(),
+  actual        numeric,
+  result        text NOT NULL,       -- win | loss | push | void
+  profit_units  numeric NOT NULL,
+  closing_line  numeric,
+  closing_price_american int,
+  clv_prob      numeric              -- closing no-vig prob − published market_prob (positive = line moved toward us)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id          bigserial PRIMARY KEY,
+  job         text NOT NULL,
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  status      text NOT NULL DEFAULT 'running',
+  rows        int,
+  detail      jsonb
+);
+
+-- Game-level win probabilities for the moneyline layer (append-only per scoring run)
+CREATE TABLE IF NOT EXISTS game_projections (
+  id                 bigserial PRIMARY KEY,
+  model_run_id       bigint REFERENCES model_runs(id),
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  season             int NOT NULL,
+  week               int NOT NULL,
+  game_id            text NOT NULL,
+  snapshot_id        bigint REFERENCES odds_snapshots(id),
+  home_team          text NOT NULL,
+  away_team          text NOT NULL,
+  kickoff_utc        timestamptz,
+  p_home_model       numeric NOT NULL,     -- raw ratings model
+  p_home_market      numeric,              -- sportsbook no-vig consensus
+  p_home_polymarket  numeric,              -- Polymarket mid
+  p_home_used        numeric NOT NULL,     -- blend used for cards
+  elo_home           numeric, elo_away numeric,
+  home_best          jsonb,                -- {book, american, decimal}
+  away_best          jsonb,
+  factors            jsonb NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS game_projections_sw ON game_projections(season, week);
+
+-- Spread/total projections per game (append-only per scoring run) — the /games page in the Sasser layout
+CREATE TABLE IF NOT EXISTS spread_projections (
+  id                 bigserial PRIMARY KEY,
+  model_run_id       bigint REFERENCES model_runs(id),
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  season             int NOT NULL,
+  week               int NOT NULL,
+  game_id            text NOT NULL,
+  snapshot_id        bigint REFERENCES odds_snapshots(id),
+  open_snapshot_id   bigint REFERENCES odds_snapshots(id),
+  home_team          text NOT NULL,
+  away_team          text NOT NULL,
+  kickoff_utc        timestamptz,
+  home_record        text, away_record text,
+  proj_margin_raw    numeric NOT NULL,     -- ratings model alone, home perspective
+  proj_margin        numeric NOT NULL,     -- blended toward the market (anchor weight in MODEL.md)
+  proj_total_raw     numeric, proj_total numeric,
+  proj_home_score    numeric, proj_away_score numeric,
+  open_spread        numeric,              -- home handicap, median of bettable books, week's first snapshot
+  current_spread     numeric,              -- same, latest snapshot
+  sharp_spread       numeric,              -- Pinnacle home handicap when present
+  current_total      numeric,
+  gap_raw            numeric, gap numeric, -- projection − market expected home margin
+  pick_side          text, pick_line numeric, pick_book text, pick_price_american int,
+  pick_p_cover       numeric, pick_edge numeric,
+  lean_plus          boolean NOT NULL DEFAULT false,
+  factors            jsonb NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS spread_projections_sw ON spread_projections(season, week);
+
+-- Picks scraped from an external source (davidsasser.com/cfb) — append-only snapshots, graded like our own
+CREATE TABLE IF NOT EXISTS external_picks (
+  id               bigserial PRIMARY KEY,
+  source           text NOT NULL,           -- 'sasser_cfb'
+  fetched_at       timestamptz NOT NULL DEFAULT now(),
+  season           int NOT NULL,
+  week             int,
+  sport            text NOT NULL,           -- 'cfb' | 'nfl'
+  game_date        date,
+  kickoff_text     text,
+  home_team        text NOT NULL,
+  away_team        text NOT NULL,
+  home_record      text, away_record text,
+  proj_home_score  numeric, proj_away_score numeric,
+  open_line        text, current_line text, proj_line text,
+  pick_team        text,                    -- team name as shown
+  pick_line        numeric,                 -- handicap from the picked team's perspective
+  pick_text        text NOT NULL,
+  pick_is_home     boolean,
+  espn_id          text,                    -- from the article id on his page; grading key
+  UNIQUE (source, season, game_date, home_team, away_team, pick_text)
+);
+CREATE INDEX IF NOT EXISTS external_picks_sw ON external_picks(source, season, week);
+ALTER TABLE external_picks ADD COLUMN IF NOT EXISTS espn_id text;
+
+CREATE TABLE IF NOT EXISTS external_grades (
+  id             bigserial PRIMARY KEY,
+  pick_id        bigint NOT NULL REFERENCES external_picks(id),
+  graded_at      timestamptz NOT NULL DEFAULT now(),
+  home_score     int, away_score int,
+  result         text NOT NULL,             -- win | loss | push
+  profit_units   numeric NOT NULL,          -- at −110
+  espn_id        text,
+  UNIQUE (pick_id)
+);
+
+-- Closing-line backtest bets (derived; rebuilt whole by `export_backtest`). Feeds the web Backtest lab.
+CREATE TABLE IF NOT EXISTS backtest_bets (
+  id BIGSERIAL PRIMARY KEY,
+  season INT NOT NULL, week INT NOT NULL, market TEXT NOT NULL, game_id TEXT, player_name TEXT, team TEXT, opponent TEXT,
+  book TEXT, line NUMERIC, side TEXT, price_decimal NUMERIC, market_prob NUMERIC, model_prob NUMERIC, prob_calibrated NUMERIC,
+  edge NUMERIC, actual NUMERIC, result TEXT
+);
+CREATE INDEX IF NOT EXISTS backtest_bets_season_idx ON backtest_bets (season, week);
+
+-- ---------------------------------------------------------------------------
+-- (moved) cards columns added after the table exists — a fresh DB failed on the first apply when these ran first
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS prob_calibrated numeric;   -- learned shrinkage of model_prob (models/calibration.py)
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS edge_calibrated numeric;
+
+-- ---------------------------------------------------------------------------
+-- LIVE EDGE BOT (/live) — append-only. Owner: the live-bot agent (docs/AGENT_LIVE_BOT.md, docs/LIVE.md).
+-- The bot writes ONLY tables prefixed live_ and rows in cards with source='live'.
+-- ---------------------------------------------------------------------------
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'model';   -- model (pipeline) | live (live bot paper alerts)
+CREATE INDEX IF NOT EXISTS cards_source ON cards(source, created_at);
+
+-- one row per odds poll (pre-game or in-game). Referenced by cards.snapshot_id? No: cards.snapshot_id references
+-- odds_snapshots, so every live poll ALSO inserts an odds_snapshots row (label 'live_pregame' | 'live_ingame')
+-- and live_snapshots carries the live-specific detail keyed by that id.
+CREATE TABLE IF NOT EXISTS live_snapshots (
+  id             bigserial PRIMARY KEY,
+  snapshot_id    bigint NOT NULL REFERENCES odds_snapshots(id),   -- the paired odds_snapshots row
+  taken_at       timestamptz NOT NULL DEFAULT now(),
+  kind           text NOT NULL,           -- pregame | ingame
+  event_id       text,                    -- The Odds API event id polled (NULL for a multi-event game-lines call)
+  game_id        text,
+  markets        text[] NOT NULL,
+  credits_used   int NOT NULL DEFAULT 0,
+  n_lines        int NOT NULL DEFAULT 0,  -- lines seen in the payload
+  n_new          int NOT NULL DEFAULT 0,  -- lines stored (changed vs the previous poll)
+  game_state_id  bigint,                  -- live_game_state.id at poll time (in-game)
+  detail         jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS live_snapshots_event ON live_snapshots(event_id, taken_at);
+
+-- every polled line that differs from the last stored line for the same (event, market, book, player, side).
+-- Unchanged lines are NOT re-stored (they would be millions of rows a week at 5-minute polling); the
+-- live_snapshots row proves the poll happened and its n_lines says what was seen. Append-only.
+CREATE TABLE IF NOT EXISTS live_lines (
+  id               bigserial PRIMARY KEY,
+  live_snapshot_id bigint NOT NULL REFERENCES live_snapshots(id),
+  seen_at          timestamptz NOT NULL DEFAULT now(),
+  event_id         text NOT NULL,
+  market           text NOT NULL,
+  bookmaker        text NOT NULL,
+  player           text,
+  side             text NOT NULL,
+  line             numeric,
+  price_decimal    numeric NOT NULL,
+  price_american   int NOT NULL,
+  book_last_update timestamptz,
+  is_live          boolean NOT NULL DEFAULT false    -- polled while the game was in progress
+);
+CREATE INDEX IF NOT EXISTS live_lines_key ON live_lines(event_id, market, bookmaker, player, side, seen_at);
+
+-- every alert decision. A card row (source='live') is created for every alert that clears the bar,
+-- whether or not the message was delivered; status says what happened to the message.
+CREATE TABLE IF NOT EXISTS live_alerts (
+  id               bigserial PRIMARY KEY,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  card_id          bigint REFERENCES cards(id),
+  live_snapshot_id bigint REFERENCES live_snapshots(id),
+  kind             text NOT NULL,       -- pregame | ingame
+  channel          text NOT NULL,       -- discord | telegram | none
+  status           text NOT NULL,       -- sent | not_sent | suppressed
+  reason           text,                -- not_sent: rate_limit | outage | no_webhook | dry_run ; suppressed: duplicate | cooldown
+  dedupe_key       text NOT NULL,       -- player|market|side|book|line
+  minutes_to_kick  numeric,
+  game_state_id    bigint,
+  stake_units      numeric,
+  payload          jsonb NOT NULL DEFAULT '{}',
+  sent_at          timestamptz,
+  message_id       text
+);
+CREATE INDEX IF NOT EXISTS live_alerts_card ON live_alerts(card_id);
+CREATE INDEX IF NOT EXISTS live_alerts_dedupe ON live_alerts(dedupe_key, created_at);
+
+-- CLV measurements per alert at fixed horizons. Pre-game: 'close' (last line before kickoff).
+-- In-game: '30s' and 'dead_ball' (next stoppage). clv_prob = fair prob at horizon − fair prob at alert (same side);
+-- clv_line = line at horizon − line at alert, signed so positive = moved toward us.
+CREATE TABLE IF NOT EXISTS live_clv (
+  id              bigserial PRIMARY KEY,
+  alert_id        bigint NOT NULL REFERENCES live_alerts(id),
+  measured_at     timestamptz NOT NULL DEFAULT now(),
+  horizon         text NOT NULL,        -- close | 30s | dead_ball
+  bookmaker       text,
+  line            numeric,
+  price_decimal   numeric,
+  market_prob     numeric,
+  clv_prob        numeric,
+  clv_line        numeric,
+  source          text NOT NULL DEFAULT 'live_lines',   -- live_lines | odds_lines
+  UNIQUE (alert_id, horizon)
+);
+
+-- in-game state from ESPN, one row per fetch that changed anything (score, clock, plays)
+CREATE TABLE IF NOT EXISTS live_game_state (
+  id            bigserial PRIMARY KEY,
+  fetched_at    timestamptz NOT NULL DEFAULT now(),
+  espn_id       text NOT NULL,
+  game_id       text,
+  state         text NOT NULL,          -- pre | in | post
+  period        int,
+  clock_sec     int,                    -- seconds left in the period
+  home_team     text, away_team text,
+  home_score    int, away_score int,
+  home_plays    int, away_plays int,    -- offensive plays so far
+  possession    text,
+  payload       jsonb NOT NULL DEFAULT '{}'   -- parsed box score: per-player yards/targets/carries
+);
+CREATE INDEX IF NOT EXISTS live_game_state_game ON live_game_state(espn_id, fetched_at);
+
+-- in-game projections (paper), one per player-market per game-state row we priced
+CREATE TABLE IF NOT EXISTS live_projections (
+  id               bigserial PRIMARY KEY,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  game_state_id    bigint NOT NULL REFERENCES live_game_state(id),
+  game_id          text,
+  player_id        text NOT NULL,
+  player_name      text,
+  market           text NOT NULL,
+  projection_id    bigint REFERENCES projections(id),   -- the pre-game prior
+  y_t              numeric NOT NULL,   -- observed stat so far
+  f                numeric NOT NULL,   -- fraction of expected team plays elapsed
+  usage_adj        numeric NOT NULL,
+  script_adj       numeric NOT NULL,
+  mean_live        numeric NOT NULL,
+  sd_live          numeric NOT NULL
+);
+CREATE INDEX IF NOT EXISTS live_projections_game ON live_projections(game_id, player_id, market);
+
+-- Same-day box scores from ESPN (ingest/espn_boxscores.py) — grading fallback until nflverse weekly stats land.
+CREATE TABLE IF NOT EXISTS raw_boxscores_espn (
+  season int NOT NULL, week int NOT NULL, game_id text NOT NULL, player_id text NOT NULL,
+  espn_id text, player_name text, team text,
+  attempts int, completions int, passing_yards numeric, carries int, rushing_yards numeric,
+  targets int, receptions int, receiving_yards numeric,
+  fetched_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (season, week, game_id, player_id)
+);
+
+-- Bets Haywood actually placed (logged from the screener's "placed" button). Graded through cards → grades.
+CREATE TABLE IF NOT EXISTS placed_bets (
+  id bigserial PRIMARY KEY,
+  placed_at timestamptz NOT NULL DEFAULT now(),
+  card_id bigint NOT NULL REFERENCES cards(id),
+  stake_units numeric NOT NULL,
+  book text, price_american int, line numeric,
+  note text
+);
+CREATE INDEX IF NOT EXISTS placed_bets_card ON placed_bets(card_id);
+
+-- ---------------------------------------------------------------------------
+-- EXPERIMENTAL: L3 Defense vs. Line (DECISIONS #43–#46). Separate ledger; never on the screener, never staked.
+-- Append-only like everything else: a new run (snapshot/label) writes new rows; nothing is updated or deleted.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS experimental_l3_defense (
+  id            bigserial PRIMARY KEY,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  run_label     text NOT NULL,
+  season        int NOT NULL,
+  week          int NOT NULL,
+  team          text NOT NULL,
+  as_of         timestamptz NOT NULL,          -- last kickoff of any game used (< first kickoff of `week`)
+  games         int,
+  l3_games      int,
+  l3_opps       text,
+  pass_ypg_l3   numeric,                       -- TeamRankings definition (net of sacks)
+  rush_ypg_l3   numeric,
+  tr_pass_l3    numeric,                       -- TeamRankings "Last 3" scraped at run time (cross-check only)
+  tr_rush_l3    numeric,
+  tr_status     text,                          -- ok | mismatch | unavailable
+  pass_naive_rank int, pass_naive_cond text,
+  rush_naive_rank int, rush_naive_cond text,
+  pass_v1_cond  text, rush_v1_cond text,
+  stats         jsonb NOT NULL,                -- per stat: raw, adj, shrunk, shrink, sd, z, rank, n, league
+  UNIQUE (season, week, team, run_label)
+);
+
+CREATE TABLE IF NOT EXISTS experimental_l3_flags (
+  id              bigserial PRIMARY KEY,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  run_label       text NOT NULL,
+  version         text NOT NULL,               -- naive_v0 | l3_v1
+  season          int NOT NULL,
+  week            int NOT NULL,
+  game_id         text,
+  kickoff_utc     timestamptz,
+  player_id       text,
+  player_name     text,
+  position        text,
+  team            text,
+  opponent        text,
+  market          text NOT NULL,               -- player_pass_yds | player_rush_yds
+  side            text,                        -- Over | Under | NULL = evaluated, no flag
+  line            numeric,
+  price_american  int,
+  price_decimal   numeric,
+  book            text,
+  snapshot_id     bigint,
+  fair_over       numeric,                     -- mean no-vig P(over) across bettable books at this line
+  market_prob     numeric,                     -- no-vig P(side) (NULL when no side)
+  model_prob      numeric,                     -- l3_v1 P(side); NULL for naive_v0
+  edge            numeric,
+  p_over          numeric,
+  projection      numeric,
+  proj_p25        numeric,
+  proj_p75        numeric,
+  player_l3       numeric,
+  player_l3_games text,
+  def_cond        text,                        -- soft | stingy | ''
+  tag             text NOT NULL DEFAULT 'watch',   -- watch | lean (publishing rule, DECISIONS #46)
+  injury_status   text,
+  factors         jsonb NOT NULL DEFAULT '[]',
+  inputs          jsonb NOT NULL DEFAULT '{}',
+  UNIQUE (version, season, week, player_id, market, snapshot_id)
+);
+CREATE INDEX IF NOT EXISTS experimental_l3_flags_sw ON experimental_l3_flags(season, week, version);
+
+CREATE TABLE IF NOT EXISTS experimental_l3_grades (
+  id            bigserial PRIMARY KEY,
+  flag_id       bigint NOT NULL UNIQUE REFERENCES experimental_l3_flags(id),
+  graded_at     timestamptz NOT NULL DEFAULT now(),
+  actual        numeric,
+  result        text NOT NULL,                 -- win | loss | push | void
+  profit_units  numeric NOT NULL,
+  closing_line  numeric,
+  clv_prob      numeric
+);
+
+-- Backtest summary + publishing-rule status the L3 page shows (copied from l3_params.json by each scoring run).
+CREATE TABLE IF NOT EXISTS experimental_l3_meta (
+  id          bigserial PRIMARY KEY,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  generated_at text NOT NULL UNIQUE,            -- l3_params.json generated_at; one row per fitted version
+  backtest    jsonb NOT NULL,
+  lean_eligible jsonb NOT NULL,
+  eb          jsonb NOT NULL,
+  eb_validation jsonb NOT NULL
+);

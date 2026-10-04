@@ -1,0 +1,280 @@
+# DECISIONS.md
+
+Running log of decisions made while building NFL Edge Finder. Newest at the bottom.
+
+1. **nflverse loaded straight from GitHub release assets, not `nfl_data_py`.** `nfl_data_py`'s schedule loader points at a third-party mirror that is not reachable from every environment, and the package is deprecated in favour of nflreadpy. `pipeline/nfl_edge/sources/nflverse.py` downloads the same parquet/csv assets, caches them in `pipeline/.cache`, and never re-downloads completed seasons.
+
+2. **Odds team names → nflverse abbreviations via a static map** (`teams.py`). Event ↔ game matching uses (home, away, kickoff within 36h). Historical relocations (OAK/SD/STL) are normalised to LV/LAC/LA so rolling features survive moves.
+
+3. **Odds ingest can replay recorded payloads** (`--from-dir`). The build environment could not open a socket to api.the-odds-api.com, so Week 1 was ingested from payloads fetched out-of-band and stored as `odds_snapshots.source='file'`. Credits for those calls were logged manually into `api_usage` (22 credits). In GitHub Actions the client hits the API directly; nothing else differs.
+
+4. **`raw_pbp` stores a curated 50-column subset** of the ~370 nflverse columns (the ones the feature layer uses: play type, EPA, air yards, passers/receivers/rushers, situational fields). The full parquet stays in the cache, so widening is a one-line change to `PBP_COLS` plus a re-run — the raw shape is otherwise preserved.
+
+5. **Point-in-time features by week boundary.** A row for (season, week) uses games with `week < target` in that season plus prior seasons; `as_of` = earliest kickoff of that week − 6h. This is slightly stricter than kickoff-by-kickoff (a Sunday game ignores that week's Thursday game) and makes leakage impossible by construction. Tested in `tests/test_leakage.py`.
+
+6. **Early-season blending.** Team features blend current season with the prior season using K = 6 games-equivalent, and the prior season is first shrunk 50% toward the league mean (defenses regress hard year over year). Week 1 is therefore "last year shrunk 50%", and the card says so in an explicit `early_season` factor.
+
+7. **Market anchoring in scoring (provisional).** The scored mean is `0.65 × model + 0.35 × consensus line`. Rationale: with no historical prop lines to train against, the market line is the best available public estimate, and a model that ignores it entirely flags many false edges (Week 1 unders everywhere, because books price offseason information the stats can't see). The raw model mean is stored in `projections`; only `cards` use the anchored mean. `MARKET_ANCHOR_W` lives in `config.py` and should be refit once a few weeks of graded cards + CLV exist.
+
+8. **Distribution = Normal with heteroscedastic sd** (second LightGBM predicting |residual| on out-of-fold residuals, calibrated on the validation season). Simpler than quantile regression and the holdout coverage is good (q10/q25/q75/q90 → .097/.279/.785/.920). Revisit if a market with a skewed target (receptions, TDs) needs it.
+
+9. **No historical prop lines → no real closing-line ROI backtest.** MODEL.md reports MAE vs naive baselines, quantile coverage, P(over) calibration, and a *labelled proxy* betting sim against a player-only model. Real ROI/CLV accrues from live snapshots only. This is stated on the page and in MODEL.md rather than papered over.
+
+10. **Confidence starts at 72 and only subtracts.** Penalties: small career sample, thin prior season, new team, Week 1 / early season, missing injury report, missing weather forecast, few books, line moved against us, and implausibly large edge (>10%/>15%). Tuesday cards routinely land at ~52 (< 55) until the Wednesday/Thursday injury report and forecast arrive, which is the intended behaviour: don't flag before the information exists.
+
+11. **Cards, projections, odds, injuries, grades are append-only.** A rescore inserts a new batch; the web app shows the latest batch (max `created_at`) for the target week and keeps old batches queryable. Pre-launch dev batches from a known-buggy run (PROE units) were deleted before the first publish; nothing is deleted after.
+
+12. **Web app reads Postgres through Drizzle's `postgres-js` driver with raw SQL** rather than a full Drizzle schema — the schema of record is `db/schema.sql`, and duplicating 27 tables in TypeScript before the shape settles would just be drift. Typed row shapes live in `web/src/lib/queries.ts`.
+
+13. **Weather via Open-Meteo is best-effort.** Not reachable from the build sandbox; the job runs in Actions. Until a forecast exists, outdoor cards carry a "forecast unavailable" factor and −4 confidence.
+
+14. **Moneyline model is anchored 95% to the sportsbook consensus, and moneyline cards flag price discrepancies, not model opinions.** Validation (2024) chose the anchor by log-loss; the walk-forward backtest against real nflverse closing moneylines (2019–2025) shows the raw Elo/EPA model losing 10–14% ROI at every edge threshold, including ≥15%. Full tables in MODEL.md. So the useful signal on moneylines is cross-venue pricing (e.g. Polymarket vs books), plus CLV over the week.
+
+15. **Polymarket is ingested as bookmaker `polymarket` in the same snapshot as The Odds API** (Gamma API, free). Its prices are mid quotes with no vig, so it is haircut by 1.5¢ when used as a "best price" and marked as such on cards; it also feeds a `polymarket` factor (traders vs books gap).
+
+16. **Publish threshold raised to edge ≥ 15% at the user's request (2026-09-03).** Given the backtests, this bar will rarely be met on moneylines and only occasionally on props; the home page therefore shows the closest-to-the-bar picks and every game's probability track, and the full board keeps everything. Revisit once graded results exist.
+
+17. **Home page redesigned around visuals**: games grid with a home-win-probability track (model / books / Polymarket markers, validated categorical palette), edge meters against the bar, compact prop tiles. Text-heavy card detail remains one click away.
+
+18. **Passing-yards model v2 — relative target + empirical residuals (2026-09-04).** League passing fell from 246 yds/starter-game (2016) to 216 (2025). Trees cannot extrapolate, and the v1 walk-forward holdout showed a −6 to −9 yard over-projection on 2024–25 and P(over) buckets 3–4 pts too high (a systematic *over* bias). v2 models `y − league_py_prev_season` (the offset is also a feature) and replaces the Normal with the empirical distribution of standardised out-of-fold residuals. Holdout coverage q10/q25/q75/q90 went from .094/.274/.788/.924 to .113/.267/.745/.895 and every calibration bucket is now within ~2 pts. MAE 57.8 (v1 58.0; EWM baseline 60.3). Params re-tuned to num_leaves 7 / min_data 60 (all configs within noise; simplest kept).
+
+19. **v2 context features.** (a) *Coaching regime*: `new_hc` from nflverse `home_coach/away_coach`; a new staff gets league-average priors for pass rate, pace, shotgun and no-huddle rather than last year's team values (motivated by the Bears 2024→2025 analysis: pass rate 60→55%, shotgun 71→52%, no-huddle 26→5% under a new HC). (b) *Script-neutral tendencies*: Q1–3 within one score. (c) *Injuries*: official reports 2016–2025 (55k rows) — own skill/OL outs, share of prior targets belonging to Out receivers, WR1-out flag, opponent DB and front-seven outs; each surfaces as a card factor. Live weeks use the ESPN injuries endpoint (source `espn`, mapped to gsis ids via `raw_rosters.espn_id`) because nflverse's current-season file lags; the pipeline degrades to `injury_report_seen = 0` when neither exists. (d) *League environment*: rolling 8-week and prior-season league means.
+
+20. **Two-level market anchor.** Before the per-player anchor (0.35), the median gap between posted lines and raw projections across all QBs that week is treated as an *environment* disagreement and half of it (`LEVEL_ANCHOR_W = 0.5`) is applied to every projection. Week 1 2026: gap +8.7 → shift +4.4. This removes a season-level bias (books know the passing environment better than last year's average does) without erasing player-specific disagreements, which is where matchup edges live. Both weights are to be refit from graded cards and CLV after ~6 weeks.
+
+21. **Raw-model moneyline basis is visible but never published (2026-09-04).** The user saw Titans 65.6% (ratings model) vs a 54% market and asked why no card appeared at a 10% edge filter. Cards use the 95%-anchored blend by design (decision #12/MODEL.md: the raw model loses vs closing lines at every edge bucket), so the blended edge was ~+4%. Rather than hide the model's own opinion, the Full Board and the Kelly page now have an "ML basis" toggle: *Blended (published)* is the default and the only basis that produces flagged picks or paper bets; *Raw ratings model* synthesises cards from `game_projections` (confidence pinned at 30, labelled "raw model · not a pick", linking to the game page). If the raw basis ever earns a track record it can be promoted; until then it is transparency, not advice.
+
+22. **Kelly sizing is one function everywhere.** `web/src/lib/kelly.ts` (full Kelly f* = (p·b − q)/b; default ¼-Kelly on a 100u bankroll, 3% cap per leg, ¼u rounding, <¼u skipped) is used by the `/kelly` page, the paper-bet CSV (`unit_size`, plus new `kelly_full_pct`, `kelly_fraction`, `bankroll_units` columns) and therefore the Google Sheet. The page lets the user change bankroll / fraction / cap / filters client-side; the feed keeps the defaults so the tracked record is reproducible.
+
+23. **Moneyline UI shows one bettable number (2026-09-04, supersedes the raw-basis toggle in #21).** The user's point: anything labelled "model" on a card will get bet. The game tiles and game page now show *Our number* (the blended probability — the only moneyline number we would stake), sportsbooks and Polymarket; the un-anchored ratings model is shown only on the game detail page, explicitly labelled diagnostic / not bettable. The raw-basis toggle was removed from the board and the Kelly page; `rawMoneylineCards()` remains in `queries.ts` for future evaluation only. Moneyline tiles now flag *venue price gaps* ("best price beats our number by N pts") instead of model-vs-market disagreement. Using the model over the market is the right default only where it has beaten the market on held-out data — true for passing yards, not (yet) for moneylines; improving the ML model so it earns weight is on the roadmap.
+
+24. **Real closing-line backtest → publish bar 6% for props, anchors refit (2026-09-04).** With the upgraded Odds API key, `odds_history` pulled every US book's closing passing-yards line (kickoff − 60 min) for 2023–2025 (811 games, ~12k book-lines; ~8.2k credits) into `pipeline/fixtures/odds_history/`. `backtest_lines.py` scores them exactly as the live cards are scored, walk-forward. Result with level anchor 1.0 / player anchor 0.2 (chosen on the grid): edge ≥ 6% → 579 bets, 55.8%, **+6.7% ROI**, positive in each of the three seasons (+4.4 / +13.8 / +1.9%); ≥ 4% → 985 bets, +4.5%. The 15% bar produced 12 bets in three seasons, so the prop bar moves to **6%** (`PUBLISH_MIN_EDGE_PROPS`); moneylines keep 15% (`PUBLISH_MIN_EDGE_ML`) because those cards are venue price gaps. Edges ≥ 10% are net negative (193 bets, −5.4%), so confidence is docked 6 above 10% and 12 above 15%. The backtest runs inside `train` and its table is shown on the Methodology page from `model_runs.metrics.real_lines`. Overs outperform unders (≥4%: +10.3% vs +1.3% overall; unders negative in 2023 and flat in 2025) — noted, not acted on until there is more data.
+
+25. **Philosophy check against the Unabated NFL playbook (2026-09-04).** Reviewed the "five questions" transcript. Aligned already: no betting splits / reverse-line-movement anywhere in the pipeline; props are the primary market and game sides/totals are inputs only; moneylines publish only venue price gaps; P(over) comes from a full distribution (books deal a median — the mean-vs-line comparison is shown on the card only as context); snapshots start Tuesday open and CLV is graded; the whole process is cron-driven. Changes made: (a) `AGENTS.md` codifies the philosophy and invariants for any collaborator; (b) trends engine (roadmap) now requires a stated mechanism and a minimum sample, and can only badge a card, never publish one; (c) same-game parlays are explicitly out of scope; (d) roadmap adds alternate-line pricing (derivatives — the distribution already prices any line) and injury-driven Thu–Sun re-scoring as the highest-value prop angles; (e) line movement remains a *confidence* input only, weighted small, because movement has many causes.
+
+26. **Milestone 2 — receiving yards, receptions, rushing yards (2026-09-04).** `features/skill.py` builds point-in-time rows for WR/TE/RB/FB (rolling targets, target share, air-yards share, aDOT, catch rate, receptions, receiving yards, carries, carry share, YPC, team target/carry rank, prior-season and career samples, usage trends) merged with the same opponent, offense, context, regime and injury layers as QBs, plus market-specific league-environment columns. `models/player_props.py` is the v2 passing-yards scaffolding parameterised by a `MarketSpec` (target, relative-target base column, eligible positions, usage floor, sd floor). Walk-forward holdout: receiving yards MAE 20.4 vs 20.9 EWM baseline; receptions 1.50 vs 1.54; rushing yards 23.9 vs 24.8; coverage within ~1–2 pts of nominal at every quantile. Scoring is one code path (`score_week(market)`), factors come from `scoring/skill_factors.py` with the coverage-matchup layer explicitly marked *unavailable* (−5 confidence) until a free per-defender source exists. Publish bar for these markets is provisional (same 6% as passing) until their real closing-line backtests run — `odds_history` for the three markets is queued (~8k credits per season for all three).
+
+27. **Real closing-line backtests for the new markets (2025 season) and two probability fixes (2026-09-05).** Backfilled 2025 closing lines for receiving yards, receptions and rushing yards (~8k credits; 2023–24 deferred to protect the in-season snapshot budget). The first run exposed two bugs that the passing market had hidden: (a) the anchors were applied to the model *mean* while books deal a *median* — for right-skewed receiving distributions that put the median under every line and produced 96% unders; anchors now operate on the model median (`q50`) and shift the mean by the same amount; (b) `P(over)` used a +0.5 continuity offset on an x.5 line, which is wrong for integer outcomes (P(Y ≥ line+0.5) ≈ P(Yc > line)) and biased receptions toward unders by ~half a catch. Both fixed in `passing_yards.py`, `player_props.py`, `cards.py`, `backtest_lines.py`. The backtest also voids bets where the player recorded no target/carry (the book voids inactive players). Results at level 1.0 / anchor 0.2, 1u flat, 2025: **receiving yards ≥8% → 1,313 bets, +6.8% ROI** (ROI rises with edge: ≥10% +8.5%, ≥12% +13.4%), both sides positive; **receptions ≥8% → 1,343 bets, +6.7%**; **rushing yards ≥6% → 547 bets, +1.6%** (unders +9.5%, overs −5.6% — provisional); passing (3 seasons, corrected math) ≥6% → 607 bets, +3.7%. Bars: passing 6%, receiving yards / receptions / rushing 8% (`PUBLISH_MIN_EDGE_BY_MARKET`, mirrored in `web/src/lib/thresholds.ts`). Skill-market confidence no longer penalises 10–15% edges (only >20%). One season is promising, not proven; the Methodology page says so on each card.
+
+28. **One screener instead of "This Week" + "Full Board" (2026-09-05, user request).** The home page is now a single table: *Bets* (each market's bar + confidence ≥ 55, with the ¼-Kelly stake inline) and *Everything priced* (filters for market, team, min edge, min confidence). Rows expand to show the reasons. The Kelly page remains for changing bankroll/fraction and defaults to the same bet set. `/board` redirects to `/`. Rationale: edge, confidence and stake were being read as three competing "headlines"; the screener makes the hierarchy explicit — the bar decides *whether* (edge + confidence), Kelly decides *how much*.
+
+29. **Pinnacle as the sharp reference (2026-09-05).** The Odds API serves Pinnacle (props included) in the `eu` region. On the `tue_open`, `sun_am`, `pre_kick` and manual snapshots the ingest makes a second, EU-region call per event and keeps only Pinnacle's lines (each region doubles per-event credits, so the cheaper poll snapshots stay US-only). Pinnacle is a *reference, never a venue*: excluded from best-price selection, from card prices and from the consensus best-price columns, but included in the no-vig consensus. Props: a `sharp_line` factor (Pinnacle main line vs US consensus, plus Pinnacle's own lean when the lines match) is the first factor on the card, and confidence moves +4 when the sharp book leans the pick's way, −6 when it leans against. Moneylines: Pinnacle's no-vig number replaces the US-book mean as the market reference when present. Anchoring for props still uses the US consensus line because that is what the closing-line backtests validated; switching the anchor to Pinnacle requires backfilling EU-region history (~11k credits for 2025) and is queued for the next credit reset.
+
+30. **Learned edge calibration — the feedback loop (2026-09-05).** Confidence was a hand-set rulebook that never updated. `models/calibration.py` fits a regularised logistic model P(win) ~ raw edge, edge², |z|, side, market, sample-size flags, new team / new staff, opponent-data availability, injury-report availability, early-season, usage level, and sharp-book agreement, on every graded bet: ~16k bets from the closing-line backtests plus every live graded card (weighted 3×), refit after each Tuesday grading run and in the weekly job. Finding: realised win rate rises far more slowly than raw edge (raw 4–6% → 52.4%, 8–10% → 53.8%, ≥15% → 55.4%), i.e. roughly a third of a raw edge survives the market. Consequences: every card now carries `prob_calibrated` / `edge_calibrated` ("Real edge" on the screener); Kelly stakes, the paper-bet feed and the Google Sheet size off the calibrated probability (raw-edge Kelly was over-betting ~3×); the publish bars stay on raw edge because that is what the backtests validated directly. The rule-based confidence remains as the data-availability gate. As live grades accumulate, the calibrator — not a human — decides how much to trust each situation.
+
+## 31. Calibrator knows the market price; weekly exposure cap on Kelly stakes (2026-09-05)
+
+**Fair probability as a calibration feature.** The first calibrator (#30) learned P(win) from the raw edge and situation
+only. A +140 side with a 6% raw edge wins far less often than a −110 side with the same edge, so plus-money bets
+(mostly receptions) got P(win) ≈ the −110 average and an inflated expected EV. `fair` and `fair_logit` (the no-vig
+market probability of the side) are now features. After the fix, expected units on the 2025 backtest ≈ realised
+units (+361u expected vs +308u realised at ¼-Kelly, unscaled).
+
+**Weekly exposure cap.** ¼-Kelly on ~180 qualifying bets/week sums to ~2.6× the bankroll. Stakes are now scaled by a
+common factor so the week's total ≤ `WEEKLY_EXPOSURE_PCT` (default 40%) of bankroll, applied identically in the
+screener and in `bets.csv`. The ordering of stakes (Kelly proportions) is preserved; only the level changes.
+Season-level expectation on a 100u bankroll at 40% weekly exposure: ≈ +50u/season (2025 backtest), weekly sd ≈ 4u.
+
+## 32. Cards lead with the bottom line; charts draw the skewed distribution (2026-09-05)
+
+A card reads "Giants allow the 2nd-most rushing yards" with a ▼ and then takes the Under, which looks backwards.
+It isn't: the matchup factors describe what the book has already priced into the line; the pick is the gap between
+our anchored median and that line. Changes: (1) every prop card now opens with a `bottom_line` factor — "our median
+X vs line Y (gap, in sd) … the pick is that the book over/undershoots the player's usage-based projection";
+(2) an arrow legend on the card page (arrows are relative to the bet, not to the stat); (3) projection quantiles are
+stored after anchoring (they used to be raw while the mean was anchored, so the chart contradicted the probability);
+(4) the chart is drawn from the quantiles (monotone-cubic CDF → density), so for right-skewed yardage markets the
+shaded area equals the model probability and the marker is the median, not the mean.
+
+## 33. Backtest lab: the screener's rules replayed on history, in the browser (2026-09-06)
+
+`backtest_bets` (derived, rebuilt whole by `export_backtest`, also after every `train_cal`) holds every closing-line
+backtest bet with its calibrated probability. `/api/backtest.json` serves it as column arrays (~16k rows) and the
+`/backtest` page re-runs the screener's exact rules client-side: per-market bars or a flat edge requirement, Kelly
+fraction, per-bet cap, weekly exposure scaling, sized off the calibrated or raw probability. Bankroll is held fixed
+(no compounding). Confidence is not applied historically (not stored for past weeks). At the defaults on a 100u
+bankroll: 2023 −0.3u, 2024 +21.2u, 2025 +44.3u; ~3,300 bets, +65u on 984u staked (+6.6%), max weekly sd ≈ 3.6u.
+
+## 34. Live edge bot — scope, storage and pricing parity (2026-09-06, live-bot agent)
+
+**Scope.** `/live` is a second, independent process (`docs/LIVE.md`) that watches lines at high frequency and alerts a
+human on Discord when a bet clears the pipeline's own bar. It never places bets, never touches sportsbook logins, and
+only writes `live_*` tables plus `cards(source='live')`; `live/tests/test_writes.py` scans the package for any other
+write target. The pre-game models, features, scoring and web app are used through imports only. Requests for changes
+on that side go to `docs/TODO.md` ("Requests from live bot").
+
+**Pricing parity, not a second scorer.** `live/pricing.py` imports the model pickles, confidence functions, sharp ±
+and calibrator, and `tests/test_pricing_parity.py` asserts that pricing the pipeline's own snapshot reproduces every
+card exactly (41/41 Week 1 cards: model_prob, confidence, best book, calibrated p all identical). The one live-specific
+step is re-anchoring the stored median to the current consensus with the scorer's `MARKET_ANCHOR_W`, so a line move
+between snapshots moves our median the way the next scoring run would.
+
+**Storage.** Every poll writes an `odds_snapshots` row (needed by `cards.snapshot_id`) whose `markets` are prefixed
+`live:` so the pipeline's latest-snapshot queries never pick a live poll, a `live_snapshots` row, and only the lines
+that changed since the last poll into `live_lines` (a diff-store: unchanged lines at 5-minute polling would be
+millions of rows a week; `n_lines` on the snapshot row records what was seen). Append-only; only `live_alerts.status`
+flips pending → sent/not_sent. `cards.source` column added (default `'model'`).
+
+**Credits on the 20k plan.** The plan was not yet upgraded, so the bot defaults to a 5,000-credit monthly allowance,
+a hard stop at 85% of the key's plan (`x-requests-remaining`), and hourly pacing with a 2× burst. Polling is
+adaptive: event-markets with a candidate within 3% of the bar are polled every 15 min (5 min in the last two hours),
+everything else every 6 h. In-game odds polling is off until the 100k plan (≈1.8k credits per Sunday slate); the
+ESPN tracker and paper in-game projections run regardless, for free.
+
+## 35. In-game model: (1 − f)·script, per-market sd exponent, validated on 2025 replay (2026-09-07, live-bot agent)
+
+`mean_live = y_t + mean_pre · usage_adj · (1 − f) · script_adj`. Two choices came out of the replay
+(`python -m live replay`, 272 games, `docs/MODEL.md` "live"): (a) using the pre-game `team_plays_pg` as the denominator
+for remaining opportunities biased Q1 projections low (its play-count unit does not match a live box score), so the
+remaining share is `(1 − f)` in live plays times the score-state script multiplier; with that, the live model beats
+the pre-game mean and naive pace at every checkpoint for every market (passing MAE 48/40/30/19 at end Q1/Q2/Q3/Q4-5:00
+vs 51 pre-game; receiving yards 17/14/9/4.6 vs 19.5). (b) `sd_live = sd_pre · remaining_share^k` with k = 0.40
+passing, 0.48 receiving yards, 0.45 receptions, 0.60 rushing (sqrt was too tight late for passing — garbage time —
+and too wide for rushing), which puts the standardised error's sd at 0.95–1.06 at every checkpoint. Known gap: the
+live sd is a scale on the pre-game empirical residual shape; coverage at ±1 sd is 0.72–0.89 (heavier tails than
+Normal), so P(over) near the line is fine but tail probabilities are approximate. A live residual ECDF from the
+replay is the next step once in-game odds are polled.
+
+**Paper period.** Four weeks paper-only (`LIVE_PAPER_ONLY=true`): every alert is logged as an unpublished
+`cards(source='live')` row and graded; CLV vs close (pre-game) and vs +30 s / next dead ball (in-game) is the headline
+metric; weekly numbers go to `docs/TODO.md`. The Discord API is unreachable from the Actions runners and the dev
+sandboxes, so delivery runs only on the hosted worker (Fly.io/Railway configs in `/live`).
+
+## 36. Live-bot PR #1 merged; grader made market-aware; live rows fenced off (2026-09-07)
+
+Review against `AGENTS.md`: 75 tests pass locally (parity test needs a DB with current cards), writes are confined to
+`live_*` + `cards(source='live', published=false)` + one `odds_snapshots` row per poll (label `live_*`, markets
+prefixed `live:`) + `api_usage`. Verified the scorer's `:m = ANY(markets)` queries and the grader's CLV lookup
+(odds_lines only) never see live polls. One real hazard found: the web's `latestCards` picked the newest
+`created_at` per market, so a live paper card would have replaced the whole market's screener run — every card
+query (screener, track record, bets.csv, freshness) now filters `source='model'`. Requests actioned: the grader
+reads the stat for the card's market (passing → passing_yards/attempts, receiving yards → receiving_yards/targets,
+receptions → receptions/targets, rushing → rushing_yards/carries), voids on zero usage as the backtest does, and
+grades moneylines from the final score; the calibrator's live-row query excludes `source='live'` until an
+`is_live` feature is agreed. Live alerts stay invisible on the site through the four-week paper period.
+
+## 37. Venues: price only DraftKings, FanDuel and Pinnacle; bars retuned to those books (2026-09-07)
+
+Haywood bets at DraftKings, FanDuel and Pinnacle (all licensed in Ontario). `config.BETTABLE_BOOKS` now restricts
+which books can be a card's price, the "best price", the consensus line for anchoring, the live bot's venues and the
+closing-line backtest. Every book is still stored (append-only) so this can be revisited. Pinnacle is both a venue and
+the sharp reference (`SHARP_BOOK`); `NON_BETTABLE_BOOKS` is now empty.
+
+**This shrank the backtested edge a lot**, which is the honest finding: much of the all-book "edge" was price-shopping
+softer books (Bovada, BetOnline, BetMGM, Caesars, BetRivers, Fanatics). Against DK/FD closing lines only:
+
+| market | all-book bar → ROI (old) | DK/FD by bar |
+|---|---|---|
+| passing yds (2023–25) | ≥6% → +3.7% (607 bets) | ≥4% +2.2% (695) · ≥6% −2.8% (428) · ≥8% −0.5% (233); 2025 negative at every bar |
+| receiving yds (2025) | ≥8% → +6.8% (1,313) | ≥8% +3.4% (890) · **≥10% +7.7% (621)** · ≥15% +3.4% (196) |
+| receptions (2025) | ≥8% → +6.7% (1,343) | ≥8% +0.2% (956) · ≥10% +0.5% (693) · **≥15% +6.2% (282)** |
+| rushing yds (2025) | ≥6% → +1.6% (547) | **≥6% +2.9% (427)** · ≥8% −2.5% (307) · ≥15% +3.3% (99) |
+
+New bars: passing 8%, receiving yards 10%, receptions 15%, rushing 6%. Passing is kept at 8% as a compromise
+(three-season ROI ≈ 0, 2025 clearly negative) and should be watched; if the live record at DK/FD stays negative through
+Week 6 it should be demoted to "priced, not bet". The calibrator retrains on the DK/FD-only backtest, so expected EV on
+the screener will drop to match. Pinnacle has no odds history in the fixtures, so the backtest is DK/FD only.
+
+## 38. Grade the morning after from ESPN box scores; log bets actually placed (2026-09-11)
+
+Grading waited for nflverse's weekly stats (Tuesday, and for a new season only after Week 1), so Thursday's bets
+showed as ungraded for days. `ingest/espn_boxscores.py` pulls finished games' box scores from ESPN into
+`raw_boxscores_espn` (upsert; final scores fill `raw_games` when missing) and the grader falls back to it when
+`raw_weekly_stats` has no row. `grade` now runs Fri and Mon 10:00 UTC as well as Tuesday. nflverse remains the
+source of truth once it lands (it is checked first).
+
+Separately, the paper log (`bets.csv`) locks each pick at its FIRST appearance ≥4% edge, which is the right rule for
+a systematic record but is not "what Haywood bet": lines and books drift before kickoff. `placed_bets` records the
+bets actually placed (card, stake, book, price) via a "placed?" button on screener rows, gated by
+`PLACED_BETS_TOKEN` (Vercel env; entered once in the screener, kept in localStorage). Track Record shows them as
+"My placed bets", graded through the same `grades` rows. Two ledgers, clearly labelled.
+
+## 39. Track record = bets actually logged; model paper record moves to /model-record (2026-09-11)
+
+The old /track-record listed every scored *version* of every card (a pick re-scored at five snapshots showed five
+times), so a Thursday with three real bets looked like a 20-row disaster. Split: `/track-record` is now only the
+`placed_bets` ledger (record, win rate, units, ROI, avg CLV, one row per bet at the stake/price entered); the model's
+systematic paper record lives at `/model-record`, deduplicated to the first published version of each
+(season, week, market, player, side) — the same locking rule as `/api/bets.csv`. Logging is password-gated in the
+site header ("Log in", top right; token kept in localStorage so it persists), the site stays public read-only.
+The "Log a bet" list keys candidates by (week, market, player, side, **line**) and only shows versions published
+before kickoff, because a card is graded at its own line — logging the wrong line would grade the wrong bet.
+
+## 40. Games page (spreads) in the Sasser layout; CFB tab tracks his picks instead of trusting them (2026-09-12)
+
+Haywood asked for David Sasser's CFB board (davidsasser.com/cfb) rebuilt for the NFL, and a CFB tab. What his board
+is: a margin model submitted to the CFBD Model Pick'em contest (his profile: 1,851 games all-time, 956-850-45 ATS =
+52.9%, MAE 12.55 — market level; break-even at −110 is 52.4%), played against the current line in every game. The
+31-18-2 he tweets is Week 0–1, when lines are priors and every rating model looks smart. No methodology is published.
+
+NFL version (`models/spread.py`, `scoring/spread_cards.py`, `/games`): ridge on the moneyline model's features
+predicting the home margin and the total, walk-forward 2019–2025 against nflverse closing spreads. Result: the raw
+model's MAE is 10.22 vs the market's 9.83; picking every game goes 881-947-43 ATS (48.2%, −7.8% ROI); only the
+≥5-pt-disagreement bucket is positive (76-62, +5% ROI, n=139, and 6-13 in 2025) — noise. So the page shows every
+game the way his does (projected scores, open, current, projected line, pick, P(cover)) and grades every pick
+(cards with market='spreads', `published=false`), but nothing is staked. The projection is shifted by the median
+walk-forward residual (least squares centres the mean; covering is about the median), and P(cover) uses the
+empirical residual CDF, not a normal — NFL margins pile up on 3 and 7.
+
+CFB (`ingest/sasser_cfb.py`, `/cfb`): scrape his board (server-rendered; each game's `<article aria-labelledby>`
+carries the ESPN event id, which is what makes free grading possible), store every pick as seen (append-only, a
+changed pick is a new row, the record counts the first), grade at −110 from the ESPN college summary, show his
+record as WE measure it. No CFBD API key needed. If four weeks of our grading show him at ≥55% we can talk about
+a CFB model of our own; at his contest rate (52.9%) the honest expectation is roughly break-even.
+
+41. **Calibration live rows are deduped to one row per pick, and their weight ramps 1×→3× (2026-09-18, live-bot agent at
+Haywood's request — calibration is otherwise the main agent's).** Symptom: Week 3 screener showed 26 picks over the raw
+bars and 0.00u staked — every "real edge" negative. Cause: `_live_rows` pulled every graded card, and cards are
+append-only across snapshots, so two weeks produced 9,388 "live" training rows (the same ~800 picks 5–10× each) which
+at the 3× weight outvoted the 15k backtest rows; the fitted coefficient on `edge` went to −0.012, i.e. "raw edge means
+nothing", and Kelly on the calibrated probability sized everything to zero. Fix: `DISTINCT ON (season, week, market,
+player_id, side)` ordered by `created_at` (the first version, as `/model-record` counts it) and
+`live_w = 1 + 2·min(n_live/2000, 1)`. Calibrator version `cal-logit-v2`. The honest caveat stands: the model's
+deduped paper record is under 50% so far; if the retrained calibrator still sizes small, that is the data talking.
+
+## 43–46. L3 Defense vs. Line — an experimental tab with its own ledger (2026-10-04)
+
+43. **The L3 experiment lives apart from the model (`pipeline/nfl_edge/experimental/`, `/experimental/l3`, tables
+`experimental_l3_*`).** Haywood's idea: when a defense has allowed a lot (or little) passing/rushing yardage over its last
+3 games (TeamRankings "Last 3") and the opposing QB's/RB's line is below (above) his own last-3 average, lean Over (Under).
+It never writes `cards`, never feeds calibration, Kelly or the screener, and is labelled "Experimental — not a model pick".
+Two versions run side by side every week and are graded on their own ledger at the first flagged price: `naive_v0` (the
+rule as stated) and `l3_v1` (the same idea, done properly). Jobs ride on existing crons inside try/except: score after the
+Tuesday open snapshot (`weekly`) and Sunday 9am (`gameday_am`), grade with `grade`. Manual: `score_l3_experiment`,
+`grade_l3_experiment`, `backtest_l3`.
+
+44. **Pre-registered rules (change any of them = a new version, not a tweak).** Defense L3 is computed from nflverse pbp
+for games before the target week's first kickoff; it reproduces TeamRankings exactly (opponent passing yards = passing
+yards minus sack yards; rushing = all rushing plays incl. scrambles/kneels — max |diff| 0.03 yd/g on 2026 Weeks 1–4).
+TeamRankings is scraped once per run only as a ±2 yd/g cross-check (labelled ok / mismatch / unavailable; it includes
+Thursday games of the current week, so Sunday runs show a few legitimate mismatches). `naive_v0`: ranks 25–32 = soft,
+1–8 = stingy, needs 3 games this season; Over when line < player L3 and soft, Under when line > L3 and stingy, otherwise
+no flag. `l3_v1`: defenses rated on yards per dropback / per designed carry (EPA and success rate shown), opponent-adjusted
+(actual − what each offense gains elsewhere, n/(n+2)-weighted toward league), shrunk with empirical Bayes; soft/stingy =
+shrunk deviation beyond ±1 SD of that week's league distribution AND the 80% interval excludes league average; then the
+projection must agree with that direction by ≥3 pts of probability vs the no-vig price at the best DK/FD/Pinnacle price.
+One threshold per version, set before the backtest → no multiple-testing correction applies.
+
+45. **EB priors and the projector are fitted on 2016–2025 and committed as `experimental/l3_params.json`.** μ = ρ·(defense's
+earlier-season deviation, else last season's), τ² by method of moments, σ² = per-play variance; B = τ²/(τ² + σ²/n).
+Result worth knowing: ρ ≈ 0.13–0.22 and B ≈ 0.15–0.29 — a 3-game defensive sample carries ~20% weight. Raw L3 predicts a
+defense's next game *worse than league average* (pass yds/dropback MSE 4.47 vs 3.40); the shrunk L3 is only marginally
+better than league average (3.37). That is the main reason the naive rule should not work. Caveat: priors are variance
+components fitted over the whole window (incl. test seasons); the projector itself is walk-forward. The weekly job
+doesn't refit — rerun `backtest_l3` after each season (or when lines are backfilled) and commit the JSON.
+
+46. **Publishing rule: everything is "watch" until a version clears ≥150 graded backtest bets with the 95% CI lower bound of
+closing-price ROI above −2%.** Backtest (docs/L3_BACKTEST.md): naive_v0 197-201, −6.3% ROI (CI −15.6% to +3.0%); Unders
+lose most (pass Unders −13.6%). l3_v1 21-17, +4.6% on 38 bets — too few to mean anything, because the statistical
+condition rarely fires (no team qualifies in Week 4 2026). The v1 projection is poorly calibrated (deciles 34%→68%
+predicted, ~50% realised): it adds nothing beyond the line yet, so it should never be promoted on its own. Both stay
+"watch". Rushing lines exist only for 2025; backfilling 2023–24 costs ~5,400 credits (> the 3,000 approval bar) — asked.
+
+47. **naive_g10: the original rule plus a 10% gap gate, tracked as its own version (Haywood, 2026-10-04).** A flag needs
+|player L3 − line| ≥ 10% of the line in the flag's direction (Cousins 220.3 vs 222.5 = 1% → no flag; Bryce Young 313 vs
+240.5 = +30% → Over). naive_v0 keeps running unchanged as the baseline. Backtests now start at Week 4 (L3 needs three
+games) and also report P&L at a flat −110 on every pick. Backtest at −110, weeks 4–18: naive_v0 197-201, −5.5% (−21.9u);
+naive_g10 120-116, −2.9% (−6.9u) — passing +2.2% (61-53), rushing −7.7% (59-63); l3_v1 21-17, +5.5%. None is
+distinguishable from zero (every 95% CI spans it). The gate trims the losing small-gap bets but has not shown an edge.
+The 10% threshold was chosen before its backtest was run; it is the second naive threshold tested, so treat any future
+"win" with that in mind.
