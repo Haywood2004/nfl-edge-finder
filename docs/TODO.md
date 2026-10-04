@@ -82,3 +82,14 @@ Week 1 (kicks 2026-09-10): pending. Format: alerts · sent / not_sent / suppress
 - [ ] Sasser's board changes picks during the week (line moves): we count the first version; consider also showing "latest-version" record.
 - [ ] Spread cards are unpublished leans; revisit after 8 graded weeks — flag only if the live ≥5-pt bucket holds ≥54%.
 - Demo: /games (NFL, Sasser layout, every game picked, graded live), /cfb (his picks, our grading).
+
+## L3 Defense vs. Line experiment (2026-10-04, DECISIONS #43–#46)
+- [ ] **Needs Haywood's OK:** backfill 2023–24 `player_rush_yds` closing lines (~272 events × 10 credits × 2 seasons ≈ 5,400
+      credits; over the 3,000 approval bar). Then `python -m nfl_edge backtest_l3`, commit `l3_params.json` + docs/L3_BACKTEST.md.
+- [ ] Opening-price backtest + backtest CLV need Tuesday-open historical snapshots (fixtures are closing only).
+- [ ] l3_v1 inputs not wired yet: teammate outs (RB2 out → carry share), OL starters out, precipitation. Player injury
+      status is used (Out/Doubtful suppress the flag; Questionable is a factor).
+- [ ] Projector calibration is poor (see L3_BACKTEST.md); try anchoring to the line like `scoring/cards.py` as l3_v2.
+- [ ] Refit `l3_params.json` after the season (weekly job doesn't refit).
+- Demo: /experimental/l3 — flags with naive_v0 / naive_g10 / l3_v1 verdicts side by side (gap % shown), 32-team defense table (raw / adjusted /
+  shrunk / TeamRankings cross-check), live ledger per version, backtest table. First live data: Week 5 Tuesday run.
