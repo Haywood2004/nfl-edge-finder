@@ -273,3 +273,19 @@ Weeks 5+: MAE 10.22 vs 9.89
 | 2025 | 10.33 | 9.72 | 74 | 28-46-0 | -20.5 |
 
 The /games page shows the blended projection (what we would actually bet off) and the raw one. Spread picks are flagged as bets only where the table above shows the gap bucket is profitable out of sample; otherwise the pick is shown as a lean with no stake, exactly like the moneyline layer.
+
+# MODEL.md — L3 experiment (naive_v0 vs l3_v1)
+
+Question: does l3_v1 beat naive_v0, and does either beat the closing line? Full generated tables: docs/L3_BACKTEST.md.
+
+- **naive_v0** (Haywood's rule as stated): 197-201-0, 49.5%, **−6.3% ROI**, 95% CI [−15.6%, +3.0%], t = −1.32 (398 bets;
+  passing 2023–25, rushing 2025, closing DK/FD/Pinnacle best price). Pass Overs +3.9% (133), pass Unders −13.6% (112),
+  rush −9.8% (153). Base rates: 51.9% of pass lines and 49.3% of rush lines went Over.
+- **l3_v1**: 21-17-0, +4.6% ROI, CI [−25.7%, +34.9%], 38 bets. Fires too rarely to judge; projection calibration is flat.
+- **Why**: a defense's last 3 games barely predict its next one. Raw L3 yards/dropback has a *higher* next-game error
+  than assuming league average (MSE 4.47 vs 3.40); after opponent adjustment and EB shrinkage (weight ~0.2 on the
+  sample) it is only a hair better than average (3.37). The book has this information too.
+- **naive_g10** (rule + 10% L3-vs-line gate, DECISIONS #47), flat −110, weeks 4–18: 120-116, −2.9% (CI −15.1%..+9.3%);
+  passing 61-53 +2.2%, rushing 59-63 −7.7%. naive_v0 at flat −110: 197-201, −5.5%.
+- **Answer**: neither beats the closing line. naive_v0 loses about the vig and is not distinguishable from break-even
+  minus juice; l3_v1 has no evidence either way yet. Both keep running as tracked experiments, tagged "watch".
