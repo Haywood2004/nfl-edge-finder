@@ -65,12 +65,14 @@ export default async function L3Page() {
                       ORDER BY team, created_at DESC`, [] as Row[]) : Promise.resolve([] as Row[]),
     latest ? safe(sql`SELECT DISTINCT ON (version, player_id, market) f.*, s.taken_at AS line_at
                       FROM experimental_l3_flags f LEFT JOIN odds_snapshots s ON s.id = f.snapshot_id
-                      WHERE f.season=${season} AND f.week=${week}
+                      LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
+                      WHERE f.season=${season} AND f.week=${week} AND v.id IS NULL
                       ORDER BY version, player_id, market, f.created_at DESC`, [] as Row[]) : Promise.resolve([] as Row[]),
     // ledger: the FIRST flagged version of each pick (the price a follower could have taken), graded at that price
     safe(sql`WITH first AS (
-               SELECT DISTINCT ON (version, season, week, player_id, market, side) id, version FROM experimental_l3_flags
-               WHERE side IS NOT NULL ORDER BY version, season, week, player_id, market, side, created_at ASC)
+               SELECT DISTINCT ON (version, season, week, player_id, market, side) f.id, f.version FROM experimental_l3_flags f
+               LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
+               WHERE f.side IS NOT NULL AND v.id IS NULL ORDER BY f.version, f.season, f.week, f.player_id, f.market, f.side, f.created_at ASC)
              SELECT first.version, count(*) FILTER (WHERE g.result IN ('win','loss','push')) AS n,
                     count(*) FILTER (WHERE g.result='win') AS w, count(*) FILTER (WHERE g.result='loss') AS l,
                     count(*) FILTER (WHERE g.result='push') AS p, coalesce(sum(g.profit_units),0) AS units, avg(g.clv_prob) AS clv
