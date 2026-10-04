@@ -17,6 +17,16 @@ def _grade_cfb_quietly():
         print(f"[cfb] grading skipped: {e}")
 
 
+def _l3_quietly(job: str, week=None, label="manual"):
+    """L3 Defense vs. Line experiment (DECISIONS #43). Experimental and separately graded: a failure here is logged and
+    never breaks the NFL job it rides on."""
+    try:
+        from .experimental.l3_jobs import score_l3_experiment, grade_l3_experiment
+        score_l3_experiment(week, label) if job == "score" else grade_l3_experiment()
+    except Exception as e:
+        print(f"[l3] {job} skipped: {e}")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="nfl_edge")
     p.add_argument("job")
@@ -117,11 +127,21 @@ def main(argv=None):
             print(f"[grade] ESPN box scores skipped: {e}")
         grade_cards()
         _grade_cfb_quietly()
+        _l3_quietly("grade")
         from .models.calibration import train as train_cal
         try:
             train_cal()
         except Exception as e:
             print(f"[grade] calibration retrain skipped: {e}")
+    elif a.job == "score_l3_experiment":
+        from .experimental.l3_jobs import score_l3_experiment
+        score_l3_experiment(a.week, a.label)
+    elif a.job == "grade_l3_experiment":
+        from .experimental.l3_jobs import grade_l3_experiment
+        grade_l3_experiment()
+    elif a.job == "backtest_l3":      # fit EB priors + projectors, backtest naive_v0 vs l3_v1 on fixture closing lines
+        from .experimental.l3_backtest import run as run_l3
+        run_l3()
     elif a.job == "ingest_nflverse":
         ingest.ingest_schedule(); ingest.ingest_pbp(a.seasons); ingest.ingest_weekly_stats(a.seasons)
         ingest.ingest_injuries(); ingest.ingest_rosters(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_snaps()
@@ -146,6 +166,7 @@ def main(argv=None):
         from .models.calibration import train as train_cal
         train_cal()
         score_week(); score_moneylines(); score_spreads()
+        _l3_quietly("score", label="tue_open")
     elif a.job == "gameday_am":   # Sunday 9am: injuries, weather, snapshot, rescore
         ingest.ingest_injuries(); ingest.ingest_injuries_espn(); ingest.ingest_depth_charts(); ingest.ingest_weather()
         ingest.ingest_odds("sun_am", tuple(a.markets))
@@ -158,6 +179,7 @@ def main(argv=None):
             score_spreads()
         except Exception as e:
             print(f"[gameday] spreads skipped: {e}")
+        _l3_quietly("score", label="sun_am")
         _grade_cfb_quietly()
     elif a.job == "bootstrap":    # first run from scratch
         ingest.ingest_schedule(list(range(2009, _cur() + 1))); ingest.ingest_pbp(); ingest.ingest_weekly_stats()
