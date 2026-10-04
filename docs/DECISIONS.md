@@ -278,3 +278,11 @@ naive_g10 120-116, −2.9% (−6.9u) — passing +2.2% (61-53), rushing −7.7% 
 distinguishable from zero (every 95% CI spans it). The gate trims the losing small-gap bets but has not shown an edge.
 The 10% threshold was chosen before its backtest was run; it is the second naive threshold tested, so treat any future
 "win" with that in mind.
+
+48. **Rushing props are RB1-only; ineligible flags are voided, never deleted (2026-10-04).** The first live run flagged
+backups (10–30 yd lines: Kaelon Black, Sione Vaki, Samaje Perine…). The rule is about the lead back, so each team's RB1
+per game = the RB with the highest posted rushing line (`l3.rb1_only`), in the live job and the backtest. Rows already
+written for non-RB1s are recorded in `experimental_l3_voids` (append-only); the page, grader and ledger skip them.
+"Active" injury status is no longer shown as a factor (only Questionable/Doubtful/Out). Backtest at flat −110, weeks
+4–18, after the RB1 rule: naive_v0 167-166, −4.3% (−14.2u); naive_g10 96-84, +1.8% (+3.3u; pass 61-53 +2.2%, rush
+35-31 +1.2%); l3_v1 16-12, +9.1% (28 bets). All CIs still span zero; nothing is a lean.
