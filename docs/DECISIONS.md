@@ -231,3 +231,50 @@ nothing", and Kelly on the calibrated probability sized everything to zero. Fix:
 player_id, side)` ordered by `created_at` (the first version, as `/model-record` counts it) and
 `live_w = 1 + 2·min(n_live/2000, 1)`. Calibrator version `cal-logit-v2`. The honest caveat stands: the model's
 deduped paper record is under 50% so far; if the retrained calibrator still sizes small, that is the data talking.
+
+## 43–46. L3 Defense vs. Line — an experimental tab with its own ledger (2026-10-04)
+
+43. **The L3 experiment lives apart from the model (`pipeline/nfl_edge/experimental/`, `/experimental/l3`, tables
+`experimental_l3_*`).** Haywood's idea: when a defense has allowed a lot (or little) passing/rushing yardage over its last
+3 games (TeamRankings "Last 3") and the opposing QB's/RB's line is below (above) his own last-3 average, lean Over (Under).
+It never writes `cards`, never feeds calibration, Kelly or the screener, and is labelled "Experimental — not a model pick".
+Two versions run side by side every week and are graded on their own ledger at the first flagged price: `naive_v0` (the
+rule as stated) and `l3_v1` (the same idea, done properly). Jobs ride on existing crons inside try/except: score after the
+Tuesday open snapshot (`weekly`) and Sunday 9am (`gameday_am`), grade with `grade`. Manual: `score_l3_experiment`,
+`grade_l3_experiment`, `backtest_l3`.
+
+44. **Pre-registered rules (change any of them = a new version, not a tweak).** Defense L3 is computed from nflverse pbp
+for games before the target week's first kickoff; it reproduces TeamRankings exactly (opponent passing yards = passing
+yards minus sack yards; rushing = all rushing plays incl. scrambles/kneels — max |diff| 0.03 yd/g on 2026 Weeks 1–4).
+TeamRankings is scraped once per run only as a ±2 yd/g cross-check (labelled ok / mismatch / unavailable; it includes
+Thursday games of the current week, so Sunday runs show a few legitimate mismatches). `naive_v0`: ranks 25–32 = soft,
+1–8 = stingy, needs 3 games this season; Over when line < player L3 and soft, Under when line > L3 and stingy, otherwise
+no flag. `l3_v1`: defenses rated on yards per dropback / per designed carry (EPA and success rate shown), opponent-adjusted
+(actual − what each offense gains elsewhere, n/(n+2)-weighted toward league), shrunk with empirical Bayes; soft/stingy =
+shrunk deviation beyond ±1 SD of that week's league distribution AND the 80% interval excludes league average; then the
+projection must agree with that direction by ≥3 pts of probability vs the no-vig price at the best DK/FD/Pinnacle price.
+One threshold per version, set before the backtest → no multiple-testing correction applies.
+
+45. **EB priors and the projector are fitted on 2016–2025 and committed as `experimental/l3_params.json`.** μ = ρ·(defense's
+earlier-season deviation, else last season's), τ² by method of moments, σ² = per-play variance; B = τ²/(τ² + σ²/n).
+Result worth knowing: ρ ≈ 0.13–0.22 and B ≈ 0.15–0.29 — a 3-game defensive sample carries ~20% weight. Raw L3 predicts a
+defense's next game *worse than league average* (pass yds/dropback MSE 4.47 vs 3.40); the shrunk L3 is only marginally
+better than league average (3.37). That is the main reason the naive rule should not work. Caveat: priors are variance
+components fitted over the whole window (incl. test seasons); the projector itself is walk-forward. The weekly job
+doesn't refit — rerun `backtest_l3` after each season (or when lines are backfilled) and commit the JSON.
+
+46. **Publishing rule: everything is "watch" until a version clears ≥150 graded backtest bets with the 95% CI lower bound of
+closing-price ROI above −2%.** Backtest (docs/L3_BACKTEST.md): naive_v0 197-201, −6.3% ROI (CI −15.6% to +3.0%); Unders
+lose most (pass Unders −13.6%). l3_v1 21-17, +4.6% on 38 bets — too few to mean anything, because the statistical
+condition rarely fires (no team qualifies in Week 4 2026). The v1 projection is poorly calibrated (deciles 34%→68%
+predicted, ~50% realised): it adds nothing beyond the line yet, so it should never be promoted on its own. Both stay
+"watch". Rushing lines exist only for 2025; backfilling 2023–24 costs ~5,400 credits (> the 3,000 approval bar) — asked.
+
+47. **naive_g10: the original rule plus a 10% gap gate, tracked as its own version (Haywood, 2026-10-04).** A flag needs
+|player L3 − line| ≥ 10% of the line in the flag's direction (Cousins 220.3 vs 222.5 = 1% → no flag; Bryce Young 313 vs
+240.5 = +30% → Over). naive_v0 keeps running unchanged as the baseline. Backtests now start at Week 4 (L3 needs three
+games) and also report P&L at a flat −110 on every pick. Backtest at −110, weeks 4–18: naive_v0 197-201, −5.5% (−21.9u);
+naive_g10 120-116, −2.9% (−6.9u) — passing +2.2% (61-53), rushing −7.7% (59-63); l3_v1 21-17, +5.5%. None is
+distinguishable from zero (every 95% CI spans it). The gate trims the losing small-gap bets but has not shown an edge.
+The 10% threshold was chosen before its backtest was run; it is the second naive threshold tested, so treat any future
+"win" with that in mind.
