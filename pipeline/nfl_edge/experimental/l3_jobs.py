@@ -141,10 +141,28 @@ def build_factors(r: dict, market: str, version: str, side: str | None) -> list[
         if r.get("wind_hi"):
             f.append({"factor": "weather", "value": r.get("wind"), "impact": "−" if side == "Over" and market == l3.PASS_MKT else "=",
                       "text": f"Wind {r.get('wind'):.0f} mph forecast (≥15)"})
-    if r.get("injury_status"):
+    if r.get("injury_status") in l3.INJURY_FLAGGED:
         f.append({"factor": "injury", "value": r["injury_status"], "impact": "−",
                   "text": f"{r['name']} is listed {r['injury_status']} — {'flag suppressed' if r['injury_status'] in ('Out', 'Doubtful') else 'status not final'}"})
     return f
+
+
+# ------------------------------------------------------------------ voids (append-only correction log)
+def _void_ineligible(season: int, week: int, market: str, eligible: set) -> int:
+    """Flags already written this week for players who are no longer eligible (e.g. RB2s scored before the RB1 rule,
+    DECISIONS #48) are voided in experimental_l3_voids. The flag rows themselves are never edited or deleted; the
+    page and the ledger skip voided flags."""
+    old = db.read_sql("""SELECT f.id, f.player_id FROM experimental_l3_flags f
+                         LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
+                         WHERE f.season=:s AND f.week=:w AND f.market=:m AND v.id IS NULL""",
+                      {"s": season, "w": week, "m": market})
+    bad = old[~old.player_id.isin(eligible)]
+    if bad.empty:
+        return 0
+    rows = pd.DataFrame({"flag_id": bad.id.astype(int), "reason": "not RB1 (highest rushing line on his team) — DECISIONS #48"})
+    n = db.upsert(rows, "experimental_l3_voids", ["flag_id"], update=False)
+    print(f"[l3] voided {n} {market} rows for non-RB1 players")
+    return n
 
 
 # ------------------------------------------------------------------ score
@@ -221,6 +239,9 @@ def score_l3_experiment(week: int | None = None, label: str = "manual") -> int:
             fr["nname"] = fr.name.map(l3.norm_name)
             b = cons.merge(fr, on=["game_id", "nname"], how="inner")
             b = b[pd.to_datetime(b.kickoff_utc, utc=True) > now]          # never write a flag after kickoff
+            if market == l3.RUSH_MKT:
+                b = l3.rb1_only(b)
+                _void_ineligible(season, wk, market, set(b.player_id))
             pj = params.get("projectors", {}).get(market)
             proj = l3.Projector.from_json(pj) if pj else None
             if proj is not None and len(b):
@@ -279,7 +300,8 @@ def score_l3_experiment(week: int | None = None, label: str = "manual") -> int:
 # ------------------------------------------------------------------ grade
 def grade_l3_experiment() -> int:
     flags = db.read_sql("""SELECT f.* FROM experimental_l3_flags f LEFT JOIN experimental_l3_grades g ON g.flag_id=f.id
-                           WHERE g.id IS NULL AND f.side IS NOT NULL AND f.kickoff_utc < now() - interval '4 hours'""")
+                           LEFT JOIN experimental_l3_voids v ON v.flag_id=f.id
+                           WHERE g.id IS NULL AND v.id IS NULL AND f.side IS NOT NULL AND f.kickoff_utc < now() - interval '4 hours'""")
     if flags.empty:
         print("[l3-grade] nothing to grade"); return 0
     with db.JobRun("grade_l3_experiment") as run:
