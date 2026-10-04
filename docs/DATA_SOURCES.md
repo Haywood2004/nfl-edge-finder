@@ -35,3 +35,8 @@ No-vig: proportional de-vig per book two-way; `odds_consensus` stores mean no-vi
 
 ## Public sanity check
 2025 pass-defense yards/game from `feat_team_defense` matched StatMuse to the hundredth (BUF 170.24 … DAL 265.94).
+
+## TeamRankings (free, scraped) — `experimental/l3_jobs.py`
+`/nfl/stat/opponent-passing-yards-per-game` and `/opponent-rushing-yards-per-game`, `table.tr-table`, column 4 = "Last 3".
+Two GETs per L3 scoring run, cross-check only (±2 yd/g vs our pbp numbers); never an input. Failure → rows labelled
+`tr_status='unavailable'`. Definitions verified: passing = net of sacks, rushing = every rushing play.
