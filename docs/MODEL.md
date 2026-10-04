@@ -287,5 +287,7 @@ Question: does l3_v1 beat naive_v0, and does either beat the closing line? Full 
   sample) it is only a hair better than average (3.37). The book has this information too.
 - **naive_g10** (rule + 10% L3-vs-line gate, DECISIONS #47), flat −110, weeks 4–18: 120-116, −2.9% (CI −15.1%..+9.3%);
   passing 61-53 +2.2%, rushing 59-63 −7.7%. naive_v0 at flat −110: 197-201, −5.5%.
+- **After the RB1-only rule (DECISIONS #48)**, flat −110: naive_v0 167-166 −4.3%; naive_g10 96-84 +1.8% (+3.3u);
+  l3_v1 16-12 +9.1%. Still no version with a CI clear of zero.
 - **Answer**: neither beats the closing line. naive_v0 loses about the vig and is not distinguishable from break-even
   minus juice; l3_v1 has no evidence either way yet. Both keep running as tracked experiments, tagged "watch".
