@@ -286,3 +286,13 @@ written for non-RB1s are recorded in `experimental_l3_voids` (append-only); the 
 "Active" injury status is no longer shown as a factor (only Questionable/Doubtful/Out). Backtest at flat −110, weeks
 4–18, after the RB1 rule: naive_v0 167-166, −4.3% (−14.2u); naive_g10 96-84, +1.8% (+3.3u; pass 61-53 +2.2%, rush
 35-31 +1.2%); l3_v1 16-12, +9.1% (28 bets). All CIs still span zero; nothing is a lean.
+
+49. **Voids only re-check games still ahead; wrong Week-4 voids revoked; naive_g10 gets its own track record (2026-10-08).**
+Week 4 the site showed naive_g10 3-1 and naive_v0 3-3 while the box scores said 4-1 and 5-5. Cause: `_void_ineligible`
+compared every flag of the week against the RB1 set of the *current* run, but a run drops games that have kicked off, so
+a later run (e.g. a delayed Sunday 9am job after the 1pm kickoffs) voided those games' RB1 flags as "not RB1" (Kyren
+Williams, Bucky Irving, Javonte Williams, Jonathan Taylor). Fix: only flags for games still in the run are re-checked.
+`repair_voids()` (runs with every grade) revokes any "not RB1" void whose flag was its team's highest rushing line in
+its snapshot; revocations go in the append-only `experimental_l3_void_revocations` and a revoked void counts as not void
+(page, grader, ledger). Haywood asked for a separate record for the 10%-gate rule: the L3 page now opens with every
+naive_g10 pick (first flagged price), W-L-P, units at the shown price and at flat −110, ROI and a per-week strip.
