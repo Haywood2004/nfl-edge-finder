@@ -28,6 +28,10 @@ ASSETS = {
 }
 
 
+# Fallback copies used only when the release asset can't be fetched (same columns; nflverse maintains both).
+MIRRORS = {"schedules": "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"}
+
+
 class NotAvailable(Exception):
     """Asset does not exist yet (e.g. pbp for a season that hasn't started)."""
 
@@ -46,12 +50,22 @@ def fetch(kind: str, season: int | None = None, max_age_hours: float = 12) -> Pa
         fresh = True
     if fresh:
         return p
-    r = requests.get(url, timeout=300, stream=True)
-    if r.status_code == 404:
+    # nflverse rebuilds release assets in place, and a file can 404 for a few minutes mid-rebuild (the 2026-10-06
+    # Tuesday `weekly` run died on schedules/games.csv). Retry, then fall back to a mirror where one exists.
+    r = None
+    for attempt, u in enumerate([url, url, url] + ([MIRRORS[kind]] if kind in MIRRORS else [])):
+        try:
+            r = requests.get(u, timeout=300, stream=True)
+        except requests.RequestException:
+            r = None
+        if r is not None and r.status_code == 200:
+            break
+        if attempt < 2:
+            time.sleep(20)
+    if r is None or r.status_code != 200:
         if p.exists():
             return p
         raise NotAvailable(f"{kind} {season} not published yet ({url})")
-    r.raise_for_status()
     tmp = p.with_suffix(p.suffix + ".part")
     with open(tmp, "wb") as f:
         for chunk in r.iter_content(1 << 20):
