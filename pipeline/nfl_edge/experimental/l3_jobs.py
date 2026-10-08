@@ -148,20 +148,45 @@ def build_factors(r: dict, market: str, version: str, side: str | None) -> list[
 
 
 # ------------------------------------------------------------------ voids (append-only correction log)
-def _void_ineligible(season: int, week: int, market: str, eligible: set) -> int:
+def _void_ineligible(season: int, week: int, market: str, eligible: set, games: set) -> int:
     """Flags already written this week for players who are no longer eligible (e.g. RB2s scored before the RB1 rule,
-    DECISIONS #48) are voided in experimental_l3_voids. The flag rows themselves are never edited or deleted; the
-    page and the ledger skip voided flags."""
-    old = db.read_sql("""SELECT f.id, f.player_id FROM experimental_l3_flags f
+    DECISIONS #48) are voided in experimental_l3_voids. Only games still being scored in this run (kickoff ahead) are
+    re-checked: a game that has kicked off drops out of the run, and its flags must not be voided for that
+    (DECISIONS #49). The flag rows themselves are never edited or deleted; the page and the ledger skip voided flags."""
+    if not games:
+        return 0
+    old = db.read_sql(f"""SELECT f.id, f.player_id FROM experimental_l3_flags f
                          LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
-                         WHERE f.season=:s AND f.week=:w AND f.market=:m AND v.id IS NULL""",
-                      {"s": season, "w": week, "m": market})
+                         WHERE f.season=:s AND f.week=:w AND f.market=:m AND v.id IS NULL
+                           AND f.game_id = ANY(:g)""",
+                      {"s": season, "w": week, "m": market, "g": sorted(games)})
     bad = old[~old.player_id.isin(eligible)]
     if bad.empty:
         return 0
     rows = pd.DataFrame({"flag_id": bad.id.astype(int), "reason": "not RB1 (highest rushing line on his team) — DECISIONS #48"})
     n = db.upsert(rows, "experimental_l3_voids", ["flag_id"], update=False)
     print(f"[l3] voided {n} {market} rows for non-RB1 players")
+    return n
+
+
+def repair_voids() -> int:
+    """DECISIONS #49: before the fix above, runs after a game kicked off voided that game's RB1 flags as "not RB1".
+    Revoke any 'not RB1' void whose flag WAS its team's RB1 (highest rushing line among that snapshot's rows for the
+    team and game). Append-only: revocations go in experimental_l3_void_revocations; voids are never deleted."""
+    bad = db.read_sql("""
+        WITH mx AS (SELECT snapshot_id, game_id, team, max(line) AS top FROM experimental_l3_flags
+                    WHERE market = 'player_rush_yds' GROUP BY 1, 2, 3)
+        SELECT v.flag_id FROM experimental_l3_voids v
+        JOIN experimental_l3_flags f ON f.id = v.flag_id
+        JOIN mx ON mx.snapshot_id IS NOT DISTINCT FROM f.snapshot_id AND mx.game_id = f.game_id AND mx.team = f.team
+        LEFT JOIN experimental_l3_void_revocations r ON r.flag_id = v.flag_id
+        WHERE r.id IS NULL AND v.reason LIKE 'not RB1%' AND f.line >= mx.top""")
+    if bad.empty:
+        return 0
+    rows = pd.DataFrame({"flag_id": bad.flag_id.astype(int),
+                         "reason": "voided after kickoff although he was RB1 — DECISIONS #49"})
+    n = db.upsert(rows, "experimental_l3_void_revocations", ["flag_id"], update=False)
+    print(f"[l3] revoked {n} wrong 'not RB1' voids")
     return n
 
 
@@ -240,8 +265,9 @@ def score_l3_experiment(week: int | None = None, label: str = "manual") -> int:
             b = cons.merge(fr, on=["game_id", "nname"], how="inner")
             b = b[pd.to_datetime(b.kickoff_utc, utc=True) > now]          # never write a flag after kickoff
             if market == l3.RUSH_MKT:
+                live_games = set(b.game_id)
                 b = l3.rb1_only(b)
-                _void_ineligible(season, wk, market, set(b.player_id))
+                _void_ineligible(season, wk, market, set(b.player_id), live_games)
             pj = params.get("projectors", {}).get(market)
             proj = l3.Projector.from_json(pj) if pj else None
             if proj is not None and len(b):
@@ -299,9 +325,14 @@ def score_l3_experiment(week: int | None = None, label: str = "manual") -> int:
 
 # ------------------------------------------------------------------ grade
 def grade_l3_experiment() -> int:
+    try:
+        repair_voids()
+    except Exception as e:
+        print(f"[l3-grade] void repair skipped: {e}")
     flags = db.read_sql("""SELECT f.* FROM experimental_l3_flags f LEFT JOIN experimental_l3_grades g ON g.flag_id=f.id
                            LEFT JOIN experimental_l3_voids v ON v.flag_id=f.id
-                           WHERE g.id IS NULL AND v.id IS NULL AND f.side IS NOT NULL AND f.kickoff_utc < now() - interval '4 hours'""")
+                           LEFT JOIN experimental_l3_void_revocations rv ON rv.flag_id=f.id
+                           WHERE g.id IS NULL AND (v.id IS NULL OR rv.id IS NOT NULL) AND f.side IS NOT NULL AND f.kickoff_utc < now() - interval '4 hours'""")
     if flags.empty:
         print("[l3-grade] nothing to grade"); return 0
     with db.JobRun("grade_l3_experiment") as run:
