@@ -812,3 +812,11 @@ CREATE TABLE IF NOT EXISTS experimental_l3_voids (
   flag_id    bigint NOT NULL UNIQUE REFERENCES experimental_l3_flags(id),
   reason     text NOT NULL
 );
+
+-- Revoked L3 voids (append-only, DECISIONS #49): a void with a revocation counts as not voided.
+CREATE TABLE IF NOT EXISTS experimental_l3_void_revocations (
+  id         bigserial PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  flag_id    bigint NOT NULL UNIQUE REFERENCES experimental_l3_flags(id),
+  reason     text NOT NULL
+);
