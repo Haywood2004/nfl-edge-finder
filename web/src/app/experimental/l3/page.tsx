@@ -60,24 +60,38 @@ function BtLine({ k, s }: { k: string; s?: Row }) {
 export default async function L3Page() {
   const [latest] = await safe(sql`SELECT season, week, max(created_at) AS at FROM experimental_l3_defense GROUP BY 1,2 ORDER BY 1 DESC, 2 DESC LIMIT 1`, [] as Row[]);
   const season = latest?.season, week = latest?.week;
-  const [defense, flags, ledger, meta] = await Promise.all([
+  const [defense, flags, ledger, meta, g10] = await Promise.all([
     latest ? safe(sql`SELECT DISTINCT ON (team) * FROM experimental_l3_defense WHERE season=${season} AND week=${week}
                       ORDER BY team, created_at DESC`, [] as Row[]) : Promise.resolve([] as Row[]),
     latest ? safe(sql`SELECT DISTINCT ON (version, player_id, market) f.*, s.taken_at AS line_at
                       FROM experimental_l3_flags f LEFT JOIN odds_snapshots s ON s.id = f.snapshot_id
                       LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
-                      WHERE f.season=${season} AND f.week=${week} AND v.id IS NULL
+                      LEFT JOIN experimental_l3_void_revocations rv ON rv.flag_id = f.id
+                      WHERE f.season=${season} AND f.week=${week} AND (v.id IS NULL OR rv.id IS NOT NULL)
                       ORDER BY version, player_id, market, f.created_at DESC`, [] as Row[]) : Promise.resolve([] as Row[]),
     // ledger: the FIRST flagged version of each pick (the price a follower could have taken), graded at that price
     safe(sql`WITH first AS (
                SELECT DISTINCT ON (version, season, week, player_id, market, side) f.id, f.version FROM experimental_l3_flags f
                LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
-               WHERE f.side IS NOT NULL AND v.id IS NULL ORDER BY f.version, f.season, f.week, f.player_id, f.market, f.side, f.created_at ASC)
+               LEFT JOIN experimental_l3_void_revocations rv ON rv.flag_id = f.id
+               WHERE f.side IS NOT NULL AND (v.id IS NULL OR rv.id IS NOT NULL) ORDER BY f.version, f.season, f.week, f.player_id, f.market, f.side, f.created_at ASC)
              SELECT first.version, count(*) FILTER (WHERE g.result IN ('win','loss','push')) AS n,
                     count(*) FILTER (WHERE g.result='win') AS w, count(*) FILTER (WHERE g.result='loss') AS l,
                     count(*) FILTER (WHERE g.result='push') AS p, coalesce(sum(g.profit_units),0) AS units, avg(g.clv_prob) AS clv
              FROM first JOIN experimental_l3_grades g ON g.flag_id = first.id GROUP BY first.version`, [] as Row[]),
     safe(sql`SELECT * FROM experimental_l3_meta ORDER BY created_at DESC LIMIT 1`, [] as Row[]),
+    // naive_g10 track record: every pick at its first flagged price, graded or pending
+    safe(sql`WITH first AS (
+               SELECT DISTINCT ON (f.season, f.week, f.player_id, f.market, f.side) f.* FROM experimental_l3_flags f
+               LEFT JOIN experimental_l3_voids v ON v.flag_id = f.id
+               LEFT JOIN experimental_l3_void_revocations rv ON rv.flag_id = f.id
+               WHERE f.version = 'naive_g10' AND f.side IS NOT NULL AND (v.id IS NULL OR rv.id IS NOT NULL)
+               ORDER BY f.season, f.week, f.player_id, f.market, f.side, f.created_at ASC)
+             SELECT first.season, first.week, first.player_name, first.team, first.opponent, first.market, first.side,
+                    first.line, first.price_american, first.price_decimal, first.book, first.player_l3, first.kickoff_utc,
+                    g.actual, g.result, g.profit_units
+             FROM first LEFT JOIN experimental_l3_grades g ON g.flag_id = first.id
+             ORDER BY first.season DESC, first.week DESC, first.kickoff_utc ASC, first.player_name`, [] as Row[]),
   ]);
   const bt: Row = meta[0]?.backtest ?? {};
   const lean: Row = meta[0]?.lean_eligible ?? {};
@@ -99,6 +113,19 @@ export default async function L3Page() {
   const ranAt = flags.reduce((m: Date | null, f) => (!m || new Date(f.created_at) > m ? new Date(f.created_at) : m), null);
   const lineAt = flags.find((f) => f.line_at)?.line_at;
   const trStatus = defense.length ? (defense.every((d) => d.tr_status === "ok") ? "matches" : defense.some((d) => d.tr_status === "unavailable") ? "unavailable" : `${defense.filter((d) => d.tr_status === "mismatch").length} teams differ`) : null;
+  // naive_g10 tracker numbers (flat −110 alongside the actual price, so a lucky price doesn't flatter it)
+  const FLAT = 100 / 110;
+  const gr = g10.filter((r) => ["win", "loss", "push"].includes(r.result));
+  const tW = gr.filter((r) => r.result === "win").length, tL = gr.filter((r) => r.result === "loss").length, tP = gr.filter((r) => r.result === "push").length;
+  const tUnits = gr.reduce((a, r) => a + Number(r.profit_units ?? 0), 0);
+  const tFlat = gr.reduce((a, r) => a + (r.result === "win" ? FLAT : r.result === "loss" ? -1 : 0), 0);
+  const tPending = g10.filter((r) => !r.result).length;
+  const weeks = [...new Set(g10.map((r) => `${r.season}|${r.week}`))].map((k) => {
+    const rs = g10.filter((r) => `${r.season}|${r.week}` === k);
+    const g = rs.filter((r) => ["win", "loss", "push"].includes(r.result));
+    return { k, week: rs[0].week, season: rs[0].season, w: g.filter((r) => r.result === "win").length, l: g.filter((r) => r.result === "loss").length,
+             p: g.filter((r) => r.result === "push").length, units: g.reduce((a, r) => a + Number(r.profit_units ?? 0), 0), pending: rs.filter((r) => !r.result).length };
+  });
   const ledgerRows = VERSIONS.map((v) => ledger.find((r) => r.version === v) ?? { version: v, n: 0, w: 0, l: 0, p: 0, units: 0 });
 
   return (
@@ -122,6 +149,58 @@ export default async function L3Page() {
           {trStatus && <> · TeamRankings cross-check: {trStatus}</>}
         </p>
       </div>
+
+      <section id="g10-record">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="h-section">Track record · rule + 10% gap gate</h2>
+          <span className="text-[12px] text-muted">every naive_g10 pick, first flagged price, 1u each</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {([
+            ["Record", `${tW}-${tL}${tP ? `-${tP}` : ""}`, tPending ? `${tPending} pending` : "all graded"],
+            ["Hit rate", tW + tL ? pct(tW / (tW + tL), 1) : "–", "wins ÷ decided"],
+            ["Units", `${tUnits >= 0 ? "+" : ""}${num(tUnits, 2)}u`, "at the price shown"],
+            ["At −110", `${tFlat >= 0 ? "+" : ""}${num(tFlat, 2)}u`, "every pick at −110"],
+            ["ROI", gr.length ? signedPct(tUnits / gr.length) : "–", `${gr.length} graded`],
+          ] as [string, string, string][]).map(([l, v, sub]) => (
+            <div key={l} className="card kpi"><div className="kpi-label">{l}</div>
+              <div className={`kpi-value ${l === "Units" || l === "At −110" ? (v.startsWith("+") ? "text-up" : v.startsWith("-") ? "text-down" : "") : ""}`}>{v}</div>
+              <div className="kpi-sub">{sub}</div></div>
+          ))}
+        </div>
+        {weeks.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2 text-[12px]">
+            {weeks.map((w) => (
+              <span key={w.k} className="pill">
+                Week {w.week}: {w.w}-{w.l}{w.p ? `-${w.p}` : ""}{w.pending ? ` (+${w.pending} pending)` : ""}
+                <span className={w.units >= 0 ? "text-up" : "text-down"}>{w.units >= 0 ? "+" : ""}{num(w.units, 2)}u</span>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="card mt-2 overflow-x-auto p-0">
+          <table className="data text-[12.5px]">
+            <thead><tr><th>Wk</th><th>Player</th><th>Bet</th><th>Price</th><th className="hidden sm:table-cell">His L3</th><th>Actual</th><th>Result</th><th>Units</th></tr></thead>
+            <tbody>
+              {g10.length === 0 && <tr><td colSpan={8} className="text-muted">No naive_g10 picks yet.</td></tr>}
+              {g10.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.week}</td>
+                  <td><span className="font-medium">{r.player_name}</span> <span className="text-muted">{r.team} v {r.opponent}</span></td>
+                  <td className={r.side === "Over" ? "text-up" : "text-down"}>{r.side} {num(r.line, 1)} <span className="text-muted">{r.market === "player_pass_yds" ? "pass" : "rush"}</span></td>
+                  <td className="tnum">{american(Number(r.price_american))} <span className="text-muted">{book(r.book)}</span></td>
+                  <td className="tnum hidden sm:table-cell">{num(r.player_l3, 1)}</td>
+                  <td className="tnum">{r.actual == null ? "–" : num(r.actual, 0)}</td>
+                  <td>{r.result === "win" ? <span className="pill pill-up">win</span> : r.result === "loss" ? <span className="pill pill-down">loss</span>
+                      : r.result ? <span className="pill">{r.result}</span> : <span className="text-muted">pending</span>}</td>
+                  <td className={`tnum ${Number(r.profit_units) > 0 ? "text-up" : Number(r.profit_units) < 0 ? "text-down" : ""}`}>{r.profit_units == null ? "–" : `${Number(r.profit_units) >= 0 ? "+" : ""}${num(r.profit_units, 2)}`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-1 text-[11px] text-dim">Small samples swing hard: this rule's backtest is 96-84 (+1.8% at −110) and can't yet be told apart from luck.</p>
+      </section>
 
       <section>
         <h2 className="h-section mb-2">Ledger (live, first flagged price)</h2>
