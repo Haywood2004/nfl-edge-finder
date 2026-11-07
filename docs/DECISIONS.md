@@ -296,3 +296,18 @@ Williams, Bucky Irving, Javonte Williams, Jonathan Taylor). Fix: only flags for 
 its snapshot; revocations go in the append-only `experimental_l3_void_revocations` and a revoked void counts as not void
 (page, grader, ledger). Haywood asked for a separate record for the 10%-gate rule: the L3 page now opens with every
 naive_g10 pick (first flagged price), W-L-P, units at the shown price and at flat −110, ROI and a per-week strip.
+
+50. **Site is members-only (Haywood, 2026-11-07).** `web/src/proxy.ts` gates every page and API behind a password
+(env `SITE_PASSWORD`, falling back to `PLACED_BETS_TOKEN`; never in code — the repo is public). `/unlock` sets a 30-day
+httpOnly cookie holding a SHA-256 of the password. Reason: the L3 picks feed the @level4props X account and a future
+paid Discord, so the slate can't be free on the site.
+
+51. **Master agent on the Claude Agent SDK (Haywood, 2026-11-07).** `agents/master.py`, run by
+`.github/workflows/agent.yml` (Thu 19:15 UTC, Sun 13:20 UTC, or dispatched by hand with a plain-English task). An
+orchestrator delegates to `ops` (Actions + DB health, may re-run the L3 jobs; snapshot only if the scheduled one failed
+and credits > 1500), `analyst` (this week's naive_g10 card + injury news) and `critic` (verifies the card against the DB,
+read-only). Guard rails: `permission_mode=dontAsk` with an allow-list, SQL only through `agents/sql.py` (READ ONLY
+transaction), $3 budget, 60 turns, 30-min hard stop, no sub-subagents, no Write/Edit. It cannot post, track bets on
+Action Network or change code. The report goes to `agent_reports` (append-only; members-only `/agent` page) and to
+Discord if `DISCORD_WEBHOOK_URL` is set — never to stdout, because Actions logs on a public repo are public.
+Posting to X and tracking on Action stay in Haywood's Chrome-based Sunday run, which reads this report.
