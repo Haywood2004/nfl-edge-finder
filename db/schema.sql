@@ -820,3 +820,14 @@ CREATE TABLE IF NOT EXISTS experimental_l3_void_revocations (
   flag_id    bigint NOT NULL UNIQUE REFERENCES experimental_l3_flags(id),
   reason     text NOT NULL
 );
+
+-- Master agent (agents/master.py): one row per run; append-only. Shown on the members-only /agent page.
+CREATE TABLE IF NOT EXISTS agent_reports (
+  id         bigserial PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  task       text NOT NULL,
+  status     text NOT NULL,
+  cost_usd   numeric,
+  turns      int,
+  report     text NOT NULL
+);
