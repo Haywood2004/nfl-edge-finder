@@ -1,0 +1,51 @@
+name: master-agent
+
+# The master agent (agents/master.py, Claude Agent SDK). Runs after the pipeline's own jobs:
+#   Thu 19:15 UTC (2:15pm ET) — after the 18:00 UTC Thursday snapshot
+#   Sun 13:20 UTC (8:20am ET) — after the 13:00 UTC gameday_am run, before the 8:47am ET posting run
+# Run it by hand from the Actions tab: "Run workflow" and type any task in plain English.
+# The repo is public, so this log is public: the agent never prints picks; its report goes to the
+# agent_reports table (members-only /agent page) and to Discord if DISCORD_WEBHOOK_URL is set.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "What should the master agent do? 'thursday', 'sunday', or plain English"
+        default: "thursday"
+  schedule:
+    - cron: "15 19 * * 4"
+    - cron: "20 13 * * 0"
+
+concurrency:
+  group: master-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TASK: ${{ github.event.inputs.task || (github.event.schedule == '20 13 * * 0' && 'sunday' || 'thursday') }}
+    steps:
+      - name: Check the API key is set
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "::error::Add the ANTHROPIC_API_KEY repository secret first"; exit 1; fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ./pipeline "claude-agent-sdk==0.2.172"
+      - name: Run master agent
+        working-directory: pipeline
+        run: python ../agents/master.py "$TASK"
