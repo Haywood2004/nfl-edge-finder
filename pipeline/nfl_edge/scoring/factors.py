@@ -100,7 +100,7 @@ def build_factors(X: dict, mean: float, used_mean: float, sd: float, line: float
         diff = ewm - line
         F.append({"factor": "player_form", "value": round(ewm, 1), "impact_over": (1 if diff > 10 else -1 if diff < -10 else 0),
                   "magnitude": min(abs(diff) / 40, 1) * 0.5,
-                  "text": f"Recent-weighted average {ewm:.1f} yds (last 3: {l3:.1f}) vs line {line}",
+                  "text": f"Recent-weighted average {ewm:.1f} yds (last 3: {'n/a' if l3 is None else f'{l3:.1f}'}) vs line {line}",
                   "source": {"table": "raw_weekly_stats", "key": "passing_yards"}})
     if trend is not None and abs(trend) >= 25:
         F.append({"factor": "usage_trend", "value": round(trend, 1), "impact_over": (1 if trend > 0 else -1),
