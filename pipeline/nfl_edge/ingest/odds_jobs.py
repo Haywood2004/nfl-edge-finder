@@ -56,7 +56,9 @@ def _lines_from_bookmakers(event_id: str, bookmakers: list[dict], snapshot_id: i
     for bk in bookmakers:
         for mk in bk.get("markets", []):
             for o in mk.get("outcomes", []):
-                price = float(o["price"])
+                price = float(o.get("price") or 0)
+                if price <= 1.0:   # a book posting a dead/suspended price (1.0) crashed every Thu snapshot (11/25-26)
+                    continue
                 rows.append({
                     "snapshot_id": snapshot_id, "event_id": event_id, "market": mk["key"],
                     "bookmaker": bk["key"], "book_title": bk.get("title"),
